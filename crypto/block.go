@@ -18,10 +18,10 @@ type BlockHeader struct {
 }
 
 type Block struct {
-	Header    BlockHeader
-	Miner     AddressType
-	Timestamp uint64
-	Txs       []*Transaction
+	Header BlockHeader
+	Miner  AddressType
+	Time   uint64
+	Txs    []*Transaction
 }
 
 func (bh *BlockHeader) ComputeHash() HashType {
@@ -88,7 +88,7 @@ func DecodeBlock(r io.Reader) (*Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	b.Timestamp = binary.LittleEndian.Uint64(buf)
+	b.Time = binary.LittleEndian.Uint64(buf)
 	_, err = io.ReadFull(r, buf)
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func EncodeBlockSelf(w io.Writer, b *Block) error {
 		return err
 	}
 	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, b.Timestamp)
+	binary.LittleEndian.PutUint64(buf, b.Time)
 	_, err = w.Write(buf)
 	if err != nil {
 		return err

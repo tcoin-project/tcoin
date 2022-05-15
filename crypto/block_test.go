@@ -28,9 +28,9 @@ func TestBlockSerialization(t *testing.T) {
 			ParentHash: HashType{1, 2, 4},
 			ExtraData:  HashType{1, 2, 5},
 		},
-		Miner:     AddressType{1, 2, 6},
-		Timestamp: 127,
-		Txs:       []*Transaction{tx, tx, tx},
+		Miner: AddressType{1, 2, 6},
+		Time:  127,
+		Txs:   []*Transaction{tx, tx, tx},
 	}
 	blk.FillHash()
 
@@ -88,9 +88,9 @@ func TestBlockFeeExec(t *testing.T) {
 			ParentHash: HashType{1, 2, 4},
 			ExtraData:  HashType{1, 2, 5},
 		},
-		Miner:     addr2,
-		Timestamp: 127,
-		Txs:       []*Transaction{tx},
+		Miner: addr2,
+		Time:  127,
+		Txs:   []*Transaction{tx},
 	}
 	blk.FillHash()
 	err := ExecuteBlock(blk, 1000000, s)
