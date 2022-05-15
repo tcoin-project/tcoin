@@ -1,6 +1,6 @@
 package storage
 
-const KeyLen = 32
+const KeyLen = 65
 const DataLen = 32
 const SliceKeyLen = 32
 const SliceDataPosLen = 16 + SliceKeyLen
