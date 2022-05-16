@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/mcfx/tcoin/crypto"
+	"github.com/mcfx/tcoin/core/block"
 )
 
 func TestConsensusSerialization(t *testing.T) {
@@ -37,16 +37,16 @@ func TestConsensus(t *testing.T) {
 		Height:           0,
 		LastBlockTime:    0,
 		LastKeyBlockTime: 0,
-		Difficulty:       crypto.HashType{1},
+		Difficulty:       block.HashType{1},
 	}
-	blk := &crypto.Block{
-		Header: crypto.BlockHeader{
-			ParentHash: crypto.HashType{1},
-			ExtraData:  crypto.HashType{1},
+	blk := &block.Block{
+		Header: block.BlockHeader{
+			ParentHash: block.HashType{1},
+			ExtraData:  block.HashType{1},
 		},
-		Miner: crypto.AddressType{1},
+		Miner: block.AddressType{1},
 		Time:  0,
-		Txs:   []*crypto.Transaction{},
+		Txs:   []*block.Transaction{},
 	}
 	var lstTime uint64 = 0
 	for i := 1; i <= 3000; i++ {

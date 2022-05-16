@@ -1,4 +1,4 @@
-package crypto
+package block
 
 import (
 	"crypto/ed25519"

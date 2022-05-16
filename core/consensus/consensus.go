@@ -6,20 +6,20 @@ import (
 	"io"
 	"math/big"
 
-	"github.com/mcfx/tcoin/crypto"
+	"github.com/mcfx/tcoin/core/block"
 )
 
 type ConsensusState struct {
 	Height           int
 	LastBlockTime    uint64
 	LastKeyBlockTime uint64
-	Difficulty       crypto.HashType
+	Difficulty       block.HashType
 }
 
 const PeriodBlockCount = 30
 const PeriodTime = 300 // 10s per block
 
-func (cs *ConsensusState) CheckAndUpdate(blk *crypto.Block) bool {
+func (cs *ConsensusState) CheckAndUpdate(blk *block.Block) bool {
 	if bytes.Compare(blk.Header.Hash[:], cs.Difficulty[:]) > 0 {
 		return false
 	}
@@ -54,7 +54,7 @@ func (cs *ConsensusState) CheckAndUpdate(blk *crypto.Block) bool {
 
 func DecodeConsensus(r io.Reader) (*ConsensusState, error) {
 	cs := &ConsensusState{}
-	buf := make([]byte, 8*3+crypto.HashLen)
+	buf := make([]byte, 8*3+block.HashLen)
 	if _, err := io.ReadFull(r, buf); err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func DecodeConsensus(r io.Reader) (*ConsensusState, error) {
 }
 
 func EncodeConsensus(w io.Writer, cs *ConsensusState) error {
-	buf := make([]byte, 8*3+crypto.HashLen)
+	buf := make([]byte, 8*3+block.HashLen)
 	binary.LittleEndian.PutUint64(buf[:8], uint64(cs.Height))
 	binary.LittleEndian.PutUint64(buf[8:16], cs.LastBlockTime)
 	binary.LittleEndian.PutUint64(buf[16:24], cs.LastKeyBlockTime)

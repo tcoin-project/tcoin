@@ -1,4 +1,4 @@
-package crypto
+package block
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"github.com/mcfx/tcoin/storage"
 )
 
-func TestTransactionSerialization(t *testing.T) {
+func TestBlockSerialization(t *testing.T) {
 	rnd := rand.New(rand.NewSource(114514))
 	tx := &Transaction{
 		TxType:   1,
@@ -23,24 +23,49 @@ func TestTransactionSerialization(t *testing.T) {
 	rnd.Read(tx.SenderSig[:])
 	rnd.Read(tx.Receiver[:])
 
+	blk := &Block{
+		Header: BlockHeader{
+			ParentHash: HashType{1, 2, 4},
+			ExtraData:  HashType{1, 2, 5},
+		},
+		Miner: AddressType{1, 2, 6},
+		Time:  127,
+		Txs:   []*Transaction{tx, tx, tx},
+	}
+	blk.FillHash()
+
 	var b bytes.Buffer
-	err := EncodeTx(&b, tx)
+	err := EncodeBlock(&b, blk)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx2, err := DecodeTx(&b)
+	bs := b.Bytes()
+	blk2, err := DecodeBlock(&b)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(tx, tx2) {
+	if !reflect.DeepEqual(blk, blk2) {
 		t.Fatal("not equal")
+	}
+	bs[0] ^= 1
+	b2 := bytes.NewBuffer(bs)
+	_, err = DecodeBlock(b2)
+	if err == nil || err.Error() != "block header hash mismatch" {
+		t.Fatalf("expect fail, but returned %v", err)
+	}
+	bs[0] ^= 1
+	bs[len(bs)-1] ^= 1
+	b2 = bytes.NewBuffer(bs)
+	_, err = DecodeBlock(b2)
+	if err == nil || err.Error() != "block body hash mismatch" {
+		t.Fatalf("expect fail, but returned %v", err)
 	}
 }
 
-func TestTransactionExecType1(t *testing.T) {
+func TestBlockFeeExec(t *testing.T) {
 	rnd := rand.New(rand.NewSource(114514))
 	pubk1, prik1 := GenKeyPair(rnd)
-	pubk2, prik2 := GenKeyPair(rnd)
+	pubk2, _ := GenKeyPair(rnd)
 	addr1 := PubkeyToAddress(pubk1)
 	addr2 := PubkeyToAddress(pubk2)
 	s := storage.EmptySlice()
@@ -58,35 +83,26 @@ func TestTransactionExecType1(t *testing.T) {
 		Data:         []byte{1, 2, 3},
 	}
 	tx.Sign(prik1)
-	err := ExecuteTx(tx, s)
+	blk := &Block{
+		Header: BlockHeader{
+			ParentHash: HashType{1, 2, 4},
+			ExtraData:  HashType{1, 2, 5},
+		},
+		Miner: addr2,
+		Time:  127,
+		Txs:   []*Transaction{tx},
+	}
+	blk.FillHash()
+	err := ExecuteBlock(blk, 1000000, s)
 	if err != nil {
-		t.Fatal("failed to execute tx 1")
-	}
-	err = ExecuteTx(tx, s)
-	if err == nil || err.Error() != "nonce mismatch" {
-		t.Fatalf("expect fail, but returned %v", err)
-	}
-	tx = &Transaction{
-		TxType:       1,
-		SenderPubkey: pubk2,
-		Receiver:     addr1,
-		Value:        100000,
-		GasLimit:     100000,
-		Fee:          100000,
-		Nonce:        0,
-		Data:         []byte{1, 2, 3},
-	}
-	tx.Sign(prik2)
-	err = ExecuteTx(tx, s)
-	if err != nil {
-		t.Fatal("failed to execute tx 2")
+		t.Fatal("failed to execute block")
 	}
 	info = GetAccountInfo(s, addr1)
-	if info.Balance != 9500000 {
+	if info.Balance != 9400000 {
 		t.Fatalf("account 1 balance invalid: %d", info.Balance)
 	}
 	info = GetAccountInfo(s, addr2)
-	if info.Balance != 300000 {
+	if info.Balance != 1600000 {
 		t.Fatalf("account 2 balance invalid: %d", info.Balance)
 	}
 }
