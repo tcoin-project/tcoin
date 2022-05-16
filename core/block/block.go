@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/mcfx/tcoin/storage"
+	"github.com/mcfx/tcoin/utils"
 )
 
 type BlockHeader struct {
@@ -32,7 +33,7 @@ func (bh *BlockHeader) ComputeHash() HashType {
 	return sha256.Sum256(buf)
 }
 
-func DecodeBlockHeader(r io.Reader) (BlockHeader, error) {
+func DecodeBlockHeader(r utils.Reader) (BlockHeader, error) {
 	var bh BlockHeader
 	buf := make([]byte, HashLen*4)
 	_, err := io.ReadFull(r, buf)
@@ -49,7 +50,7 @@ func DecodeBlockHeader(r io.Reader) (BlockHeader, error) {
 	return bh, nil
 }
 
-func EncodeBlockHeader(w io.Writer, bh BlockHeader) error {
+func EncodeBlockHeader(w utils.Writer, bh BlockHeader) error {
 	buf := make([]byte, HashLen*4)
 	copy(buf[:HashLen], bh.Hash[:])
 	copy(buf[HashLen:HashLen*2], bh.ParentHash[:])
@@ -73,7 +74,7 @@ func (b *Block) FillHash() {
 	b.Header.Hash = b.Header.ComputeHash()
 }
 
-func DecodeBlock(r io.Reader) (*Block, error) {
+func DecodeBlock(r utils.Reader) (*Block, error) {
 	bh, err := DecodeBlockHeader(r)
 	if err != nil {
 		return nil, err
@@ -89,12 +90,11 @@ func DecodeBlock(r io.Reader) (*Block, error) {
 		return nil, err
 	}
 	b.Time = binary.LittleEndian.Uint64(buf)
-	_, err = io.ReadFull(r, buf)
+	txCount, err := binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
 	}
-	txCount := binary.LittleEndian.Uint64(buf)
-	if txCount > (1 << 30) {
+	if txCount > (1 << 20) {
 		return nil, errors.New("too much transactions")
 	}
 	b.Txs = make([]*Transaction, txCount)
@@ -110,19 +110,15 @@ func DecodeBlock(r io.Reader) (*Block, error) {
 	return b, nil
 }
 
-func EncodeBlockSelf(w io.Writer, b *Block) error {
+func EncodeBlockSelf(w utils.Writer, b *Block) error {
 	_, err := w.Write(b.Miner[:])
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, b.Time)
-	_, err = w.Write(buf)
-	if err != nil {
-		return err
-	}
-	binary.LittleEndian.PutUint64(buf, uint64(len(b.Txs)))
-	_, err = w.Write(buf)
+	buf := make([]byte, 16)
+	binary.LittleEndian.PutUint64(buf[:8], b.Time)
+	cur := binary.PutUvarint(buf[8:], uint64(len(b.Txs))) + 8
+	_, err = w.Write(buf[:cur])
 	if err != nil {
 		return err
 	}
@@ -135,7 +131,7 @@ func EncodeBlockSelf(w io.Writer, b *Block) error {
 	return nil
 }
 
-func EncodeBlock(w io.Writer, b *Block) error {
+func EncodeBlock(w utils.Writer, b *Block) error {
 	err := EncodeBlockHeader(w, b.Header)
 	if err != nil {
 		return err

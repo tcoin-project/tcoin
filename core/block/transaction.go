@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/mcfx/tcoin/storage"
+	"github.com/mcfx/tcoin/utils"
 )
 
 type Transaction struct {
@@ -21,14 +22,13 @@ type Transaction struct {
 	Data         []byte
 }
 
-func DecodeTx(r io.Reader) (*Transaction, error) {
+func DecodeTx(r utils.Reader) (*Transaction, error) {
+	var err error
 	tx := &Transaction{}
-	buf := make([]byte, 8)
-	_, err := r.Read(buf[:1])
+	tx.TxType, err = r.ReadByte()
 	if err != nil {
 		return tx, err
 	}
-	tx.TxType = buf[0]
 	_, err = io.ReadFull(r, tx.SenderPubkey[:])
 	if err != nil {
 		return nil, err
@@ -41,31 +41,29 @@ func DecodeTx(r io.Reader) (*Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = io.ReadFull(r, buf)
+	tx.Value, err = binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
 	}
-	tx.Value = binary.LittleEndian.Uint64(buf)
-	_, err = io.ReadFull(r, buf)
+	tx.GasLimit, err = binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
 	}
-	tx.GasLimit = binary.LittleEndian.Uint64(buf)
-	_, err = io.ReadFull(r, buf)
+	tx.Fee, err = binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
 	}
-	tx.Fee = binary.LittleEndian.Uint64(buf)
-	_, err = io.ReadFull(r, buf)
+	tx.Nonce, err = binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
 	}
-	tx.Nonce = binary.LittleEndian.Uint64(buf)
-	_, err = io.ReadFull(r, buf)
+	dataLen, err := binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
 	}
-	dataLen := binary.LittleEndian.Uint64(buf)
+	if dataLen > (1 << 20) {
+		return nil, errors.New("invalid data length")
+	}
 	tx.Data = make([]byte, dataLen)
 	_, err = io.ReadFull(r, tx.Data)
 	if err != nil {
@@ -74,10 +72,8 @@ func DecodeTx(r io.Reader) (*Transaction, error) {
 	return tx, nil
 }
 
-func EncodeTx(w io.Writer, tx *Transaction) error {
-	buf := make([]byte, 8)
-	buf[0] = tx.TxType
-	_, err := w.Write(buf[:1])
+func EncodeTx(w utils.Writer, tx *Transaction) error {
+	err := w.WriteByte(tx.TxType)
 	if err != nil {
 		return err
 	}
@@ -93,28 +89,14 @@ func EncodeTx(w io.Writer, tx *Transaction) error {
 	if err != nil {
 		return err
 	}
-	binary.LittleEndian.PutUint64(buf, tx.Value)
-	_, err = w.Write(buf)
-	if err != nil {
-		return err
-	}
-	binary.LittleEndian.PutUint64(buf, tx.GasLimit)
-	_, err = w.Write(buf)
-	if err != nil {
-		return err
-	}
-	binary.LittleEndian.PutUint64(buf, tx.Fee)
-	_, err = w.Write(buf)
-	if err != nil {
-		return err
-	}
-	binary.LittleEndian.PutUint64(buf, tx.Nonce)
-	_, err = w.Write(buf)
-	if err != nil {
-		return err
-	}
-	binary.LittleEndian.PutUint64(buf, uint64(len(tx.Data)))
-	_, err = w.Write(buf)
+	buf := make([]byte, 40)
+	cur := 0
+	cur += binary.PutUvarint(buf[cur:], tx.Value)
+	cur += binary.PutUvarint(buf[cur:], tx.GasLimit)
+	cur += binary.PutUvarint(buf[cur:], tx.Fee)
+	cur += binary.PutUvarint(buf[cur:], tx.Nonce)
+	cur += binary.PutUvarint(buf[cur:], uint64(len(tx.Data)))
+	_, err = w.Write(buf[:cur])
 	if err != nil {
 		return err
 	}
