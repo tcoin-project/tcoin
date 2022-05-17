@@ -26,7 +26,7 @@ type Peer struct {
 	stopped chan bool
 }
 
-func NewPeer(id int, conn net.Conn, rq chan peerPacket, networkId uint16) (*Peer, error) {
+func NewPeer(id int, conn net.Conn, rq chan peerPacket, networkId uint16, cnonce []byte) (*Peer, error) {
 	//log.Printf("new peer %d", id)
 	p := &Peer{
 		id:      id,
@@ -49,6 +49,7 @@ func NewPeer(id int, conn net.Conn, rq chan peerPacket, networkId uint16) (*Peer
 	buf2 := make([]byte, PeerHelloNonceLen+8)
 	copy(buf2[:PeerHelloNonceLen], buf[:PeerHelloNonceLen])
 	copy(buf2[PeerHelloNonceLen:], hs[:8])
+	buf2 = append(buf2, cnonce...)
 	p.conn.SetDeadline(time.Now().Add(MaxTimeout))
 	_, err = p.w.Write(buf2)
 	if err != nil {
@@ -64,8 +65,11 @@ func NewPeer(id int, conn net.Conn, rq chan peerPacket, networkId uint16) (*Peer
 	}
 	copy(buf[:PeerHelloNonceLen], buf2[:PeerHelloNonceLen])
 	hs = sha256.Sum256(buf)
-	if !bytes.Equal(buf2[PeerHelloNonceLen:], hs[:8]) {
+	if !bytes.Equal(buf2[PeerHelloNonceLen:PeerHelloNonceLen+8], hs[:8]) {
 		return nil, errNetworkIdMismatch
+	}
+	if bytes.Equal(buf2[PeerHelloNonceLen+8:], cnonce) {
+		return nil, errSelf
 	}
 	go p.readFunc()
 	go p.writeLoop()
@@ -99,6 +103,7 @@ func (p *Peer) istop() {
 	p.stopped <- true
 	//log.Printf("stop triggered")
 	p.conn.SetDeadline(time.Now())
+	p.conn.Close()
 }
 
 func (p *Peer) readFunc() {
