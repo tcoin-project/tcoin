@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -24,15 +25,17 @@ type Client struct {
 	ccp         chan ClientPacket
 	cpp         chan peerPacket
 	peerInfo    map[string]time.Time
+	peerBanTime map[string]time.Time
 	allPeers    []int
 	allPeerCons []string
 	sendPeers   []byte
 	stop        chan bool
 	stopped     chan bool
 	peersMut    sync.Mutex
+	networkId   uint16
 }
 
-func NewClient(config *ClientConfig, ccp chan ClientPacket) (*Client, error) {
+func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*Client, error) {
 	c := &Client{
 		config:      config,
 		peers:       make(map[int]*Peer),
@@ -40,11 +43,13 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket) (*Client, error) {
 		ccp:         ccp,
 		cpp:         make(chan peerPacket, 500),
 		peerInfo:    make(map[string]time.Time),
+		peerBanTime: make(map[string]time.Time),
 		allPeers:    []int{},
 		allPeerCons: []string{},
 		sendPeers:   []byte("{}"),
 		stop:        make(chan bool, 50),
 		stopped:     make(chan bool, 10),
+		networkId:   networkId,
 	}
 	var err error
 	c.ln, err = net.Listen("tcp", ":"+strconv.Itoa(c.config.Port))
@@ -55,13 +60,15 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket) (*Client, error) {
 	go c.readLoop()
 	go c.maintainSendPeers()
 	go c.maintainPeers()
+	go c.maintainConns()
 	go c.broadcastFindPeer()
 	return c, nil
 }
 
 func (c *Client) Stop() {
 	c.istop()
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 7; i++ {
+		log.Printf("receiving %d", i+1)
 		<-c.stopped
 	}
 }
@@ -73,9 +80,11 @@ func (c *Client) istop() {
 	c.ln.Close()
 	c.stopped <- true
 	c.peersMut.Lock()
+	log.Printf("stopping peers")
 	for _, v := range c.peers {
 		v.Stop()
 	}
+	log.Printf("stopped peers")
 	c.peers = make(map[int]*Peer)
 	c.peerCon = make(map[int]string)
 	c.peersMut.Unlock()
@@ -91,6 +100,22 @@ func (c *Client) countPeers(outgoing bool) int {
 	return cnt
 }
 
+func (c *Client) handleConn(id int, conn net.Conn) {
+	c.peers[id] = nil
+	go func() {
+		p, err := NewPeer(id, conn, c.cpp, c.networkId)
+		if err == nil {
+			c.peersMut.Lock()
+			if p2, ok := c.peers[id]; !ok || p2 == nil {
+				c.peers[id] = p
+			}
+			c.peersMut.Unlock()
+		} else if errors.Is(err, errNetworkIdMismatch) {
+			c.DiscardPeer(id, true)
+		}
+	}()
+}
+
 func (c *Client) listen() {
 	defer c.istop()
 	for {
@@ -102,9 +127,9 @@ func (c *Client) listen() {
 		c.peersMut.Lock()
 		if _, ok := c.peers[id]; !ok {
 			if c.countPeers(false) < c.config.MaxIncomingConnections {
-				c.peers[id] = NewPeer(id, conn, c.cpp)
+				c.handleConn(id, conn)
 			} else {
-				conn.Close()
+				go conn.Close()
 			}
 		}
 		c.peersMut.Unlock()
@@ -120,7 +145,7 @@ func (c *Client) readLoop() {
 		case <-c.stop:
 			return
 		}
-		//log.Printf("got packet: %d %d %s", pp.id, pp.pkt.tp, pp.pkt.data)
+		log.Printf("got packet: %d %d %s", pp.id, pp.pkt.tp, pp.pkt.data)
 		c.peersMut.Lock()
 		if si, ok := c.peerCon[pp.id]; ok {
 			c.peerInfo[si] = time.Now()
@@ -154,7 +179,7 @@ func (c *Client) readLoop() {
 			return nil
 		}()
 		if err != nil {
-			c.DiscardPeer(pp.id)
+			c.DiscardPeer(pp.id, false)
 		}
 	}
 }
@@ -223,16 +248,18 @@ func (c *Client) maintainSendPeers() {
 
 func (c *Client) writeTo(id int, pkt packet) {
 	c.peersMut.Lock()
-	defer c.peersMut.Unlock()
-	if peer, ok := c.peers[id]; ok {
+	peer, ok := c.peers[id]
+	c.peersMut.Unlock()
+	if ok && peer != nil {
 		peer.wq <- pkt
 	}
 }
 
 func (c *Client) broadcast(pkt packet, count int) {
-	c.peersMut.Lock()
-	defer c.peersMut.Unlock()
 	o := make([]int, count)
+	bpeers := make([]*Peer, count)
+	bpeers = bpeers[:0]
+	c.peersMut.Lock()
 	for i := 0; i < count && i < len(c.allPeers); i++ {
 		var x int
 		for {
@@ -247,10 +274,15 @@ func (c *Client) broadcast(pkt packet, count int) {
 				break
 			}
 		}
+		o = append(o, x)
 		id := c.allPeers[x]
-		if peer, ok := c.peers[id]; ok {
-			peer.wq <- pkt
+		if peer, ok := c.peers[id]; ok && peer != nil {
+			bpeers = append(bpeers, peer)
 		}
+	}
+	c.peersMut.Unlock()
+	for _, peer := range bpeers {
+		peer.wq <- pkt
 	}
 }
 
@@ -283,7 +315,7 @@ func (c *Client) maintainPeers() {
 		}
 		c.peersMut.Lock()
 		if c.countPeers(true) < c.config.MaxOutgoingConnections {
-			for i := 0; i < 3; i++ {
+			for i := 0; i < 3 && len(c.allPeerCons) > 0; i++ {
 				x := rand.Intn(len(c.allPeerCons))
 				px := c.allPeerCons[x]
 				if px == c.config.PublicIP+":"+strconv.Itoa(c.config.Port) {
@@ -296,7 +328,9 @@ func (c *Client) maintainPeers() {
 					conn, err := d.Dial("tcp", px)
 					c.peersMut.Lock()
 					if err == nil {
-						c.peers[id] = NewPeer(id, conn, c.cpp)
+						if _, ok := c.peers[id]; !ok {
+							c.handleConn(id, conn)
+						}
 					}
 				}
 			}
@@ -305,13 +339,40 @@ func (c *Client) maintainPeers() {
 	}
 }
 
-func (c *Client) DiscardPeer(id int) {
+func (c *Client) maintainConns() {
+	defer c.istop()
+	for {
+		slp := time.After(time.Second * 5)
+		select {
+		case <-slp:
+		case <-c.stop:
+			return
+		}
+		q := []int{}
+		c.peersMut.Lock()
+		for id, p := range c.peers {
+			if p.Stopped() {
+				q = append(q, id)
+			}
+		}
+		c.peersMut.Unlock()
+		for _, id := range q {
+			c.DiscardPeer(id, false)
+		}
+	}
+}
+
+func (c *Client) DiscardPeer(id int, ban bool) {
 	c.peersMut.Lock()
+	con, ok := c.peerCon[id]
 	delete(c.peerCon, id)
+	if ok && ban {
+		c.peerBanTime[con] = time.Now().Add(BanTime)
+	}
 	peer, ok := c.peers[id]
 	delete(c.peers, id)
 	c.peersMut.Unlock()
-	if ok {
+	if ok && peer != nil {
 		peer.Stop()
 	}
 }
@@ -350,4 +411,16 @@ func (c *Client) GetAllPeerCons() []string {
 	c.peersMut.Lock()
 	defer c.peersMut.Unlock()
 	return c.allPeerCons
+}
+
+func (c *Client) GetPeerCount() (int, int) {
+	c.peersMut.Lock()
+	defer c.peersMut.Unlock()
+	act := 0
+	for _, p := range c.peers {
+		if p != nil {
+			act++
+		}
+	}
+	return len(c.peers), act
 }

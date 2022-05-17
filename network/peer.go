@@ -2,6 +2,10 @@ package network
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"io"
 	"net"
 	"time"
 )
@@ -22,7 +26,7 @@ type Peer struct {
 	stopped chan bool
 }
 
-func NewPeer(id int, conn net.Conn, rq chan peerPacket) *Peer {
+func NewPeer(id int, conn net.Conn, rq chan peerPacket, networkId uint16) (*Peer, error) {
 	//log.Printf("new peer %d", id)
 	p := &Peer{
 		id:      id,
@@ -30,14 +34,43 @@ func NewPeer(id int, conn net.Conn, rq chan peerPacket) *Peer {
 		r:       bufio.NewReader(conn),
 		w:       bufio.NewWriter(conn),
 		rq:      rq,
-		wq:      make(chan packet, 10),
-		stop:    make(chan bool, 20),
+		wq:      make(chan packet, 100),
+		stop:    make(chan bool, 30),
 		stopped: make(chan bool, 10),
 	}
+	buf := make([]byte, PeerHelloNonceLen)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	buf = append(buf, []byte(PeerHelloSalt)...)
+	buf = append(buf, byte(networkId), byte(networkId>>8))
+	hs := sha256.Sum256(buf)
+	buf2 := make([]byte, PeerHelloNonceLen+8)
+	copy(buf2[:PeerHelloNonceLen], buf[:PeerHelloNonceLen])
+	copy(buf2[PeerHelloNonceLen:], hs[:8])
+	p.conn.SetDeadline(time.Now().Add(MaxTimeout))
+	_, err = p.w.Write(buf2)
+	if err != nil {
+		return nil, err
+	}
+	err = p.w.Flush()
+	if err != nil {
+		return nil, err
+	}
+	_, err = io.ReadFull(p.r, buf2)
+	if err != nil {
+		return nil, err
+	}
+	copy(buf[:PeerHelloNonceLen], buf2[:PeerHelloNonceLen])
+	hs = sha256.Sum256(buf)
+	if !bytes.Equal(buf2[PeerHelloNonceLen:], hs[:8]) {
+		return nil, errNetworkIdMismatch
+	}
 	go p.readFunc()
-	go p.writeFunc()
+	go p.writeLoop()
 	go p.heartBeat()
-	return p
+	return p, nil
 }
 
 func (p *Peer) Stop() {
@@ -45,6 +78,17 @@ func (p *Peer) Stop() {
 	p.istop()
 	for i := 0; i < 4; i++ {
 		<-p.stopped
+	}
+	p.stopped <- true
+}
+
+func (p *Peer) Stopped() bool {
+	select {
+	case <-p.stopped:
+		p.stopped <- true
+		return true
+	default:
+		return false
 	}
 }
 
@@ -78,7 +122,7 @@ func (p *Peer) readFunc() {
 	}
 }
 
-func (p *Peer) writeFunc() {
+func (p *Peer) writeLoop() {
 	defer p.istop()
 	for {
 		select {
