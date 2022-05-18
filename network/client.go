@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"strconv"
@@ -76,7 +75,6 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*
 func (c *Client) Stop() {
 	c.istop()
 	for i := 0; i < 7; i++ {
-		log.Printf("receiving %d", i+1)
 		<-c.stopped
 	}
 }
@@ -88,13 +86,11 @@ func (c *Client) istop() {
 	c.ln.Close()
 	c.stopped <- true
 	c.peersMut.Lock()
-	log.Printf("stopping peers")
 	for _, v := range c.peers {
 		if v != nil {
 			v.Stop()
 		}
 	}
-	log.Printf("stopped peers")
 	c.peers = make(map[int]*Peer)
 	c.peerCon = make(map[int]string)
 	c.peersMut.Unlock()
@@ -111,7 +107,7 @@ func (c *Client) handleConn(id int, conn net.Conn) {
 		if err == nil {
 			c.peersMut.Lock()
 			if p2, ok := c.peers[id]; !ok || p2 == nil {
-				log.Printf("conn: %s - %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
+				//log.Printf("conn: %s - %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 				c.peers[id] = p
 				c.peerCon[id] = conn.RemoteAddr().String()
 			}
@@ -153,7 +149,7 @@ func (c *Client) readLoop() {
 		case <-c.stop:
 			return
 		}
-		log.Printf("%d got packet: %d %d %s", c.config.Port, pp.id, pp.pkt.tp, pp.pkt.data)
+		//log.Printf("%d got packet: %d %d %s", c.config.Port, pp.id, pp.pkt.tp, pp.pkt.data)
 		c.peersMut.Lock()
 		if si, ok := c.peerCon[pp.id]; ok {
 			c.peerInfo[si] = time.Now()

@@ -115,7 +115,7 @@ func EncodeBlockSelf(w utils.Writer, b *Block) error {
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 16)
+	buf := make([]byte, 8+binary.MaxVarintLen64)
 	binary.LittleEndian.PutUint64(buf[:8], b.Time)
 	cur := binary.PutUvarint(buf[8:], uint64(len(b.Txs))) + 8
 	_, err = w.Write(buf[:cur])

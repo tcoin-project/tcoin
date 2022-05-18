@@ -89,7 +89,7 @@ func EncodeTx(w utils.Writer, tx *Transaction) error {
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 40)
+	buf := make([]byte, binary.MaxVarintLen64*5)
 	cur := 0
 	cur += binary.PutUvarint(buf[cur:], tx.Value)
 	cur += binary.PutUvarint(buf[cur:], tx.GasLimit)
