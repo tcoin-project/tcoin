@@ -1,8 +1,10 @@
 package storage
 
+import "crypto/sha256"
+
 const KeyLen = 65
 const DataLen = 32
-const SliceKeyLen = 32
+const SliceKeyLen = sha256.Size
 const SliceDataPosLen = 16 + SliceKeyLen
 
 type KeyType [KeyLen]byte

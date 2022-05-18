@@ -24,8 +24,8 @@ var errNetworkIdMismatch = errors.New("peer network id mismatch")
 var errSelf = errors.New("conneting to self")
 
 type ClientConfig struct {
-	Port           int `json:"port"`
-	MaxConnections int `json:"max_connections"`
+	Port           int
+	MaxConnections int
 }
 
 func connStrId(s string) int {

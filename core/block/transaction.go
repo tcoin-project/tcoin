@@ -11,15 +11,15 @@ import (
 )
 
 type Transaction struct {
-	TxType       byte
-	SenderPubkey PubkeyType
-	SenderSig    SigType
-	Receiver     AddressType
-	Value        uint64
-	GasLimit     uint64
-	Fee          uint64
-	Nonce        uint64
-	Data         []byte
+	TxType       byte        `json:"tx_type"`
+	SenderPubkey PubkeyType  `json:"sender_pubkey"`
+	SenderSig    SigType     `json:"sender_sig"`
+	Receiver     AddressType `json:"receiver"`
+	Value        uint64      `json:"value"`
+	GasLimit     uint64      `json:"gas_limit"`
+	Fee          uint64      `json:"fee"`
+	Nonce        uint64      `json:"nonce"`
+	Data         []byte      `json:"data"`
 }
 
 func DecodeTx(r utils.Reader) (*Transaction, error) {

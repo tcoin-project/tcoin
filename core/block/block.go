@@ -12,17 +12,17 @@ import (
 )
 
 type BlockHeader struct {
-	Hash       HashType
-	ParentHash HashType
-	BodyHash   HashType
-	ExtraData  HashType
+	Hash       HashType `json:"hash"`
+	ParentHash HashType `json:"parent_hash"`
+	BodyHash   HashType `json:"body_hash"`
+	ExtraData  HashType `json:"extra_data"`
 }
 
 type Block struct {
-	Header BlockHeader
-	Miner  AddressType
-	Time   uint64
-	Txs    []*Transaction
+	Header BlockHeader    `json:"header"`
+	Miner  AddressType    `json:"miner"`
+	Time   uint64         `json:"time"`
+	Txs    []*Transaction `json:"txs"`
 }
 
 func (bh *BlockHeader) ComputeHash() HashType {
