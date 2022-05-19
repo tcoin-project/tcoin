@@ -20,6 +20,7 @@ import (
 func main() {
 	addr := flag.String("addr", "", "miner address")
 	url := flag.String("url", "", "rpc url")
+	n := flag.Int("threads", 1, "number of threads")
 	flag.Parse()
 	_, err := address.ParseAddr(*addr)
 	if err != nil {
@@ -56,7 +57,9 @@ func main() {
 			}
 		}
 	}
-	go mineLoop(0)
+	for i := 0; i < *n; i++ {
+		go mineLoop(i)
+	}
 	go func() {
 		for {
 			err := func() error {
