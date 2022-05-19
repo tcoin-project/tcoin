@@ -10,6 +10,10 @@ import (
 	"github.com/mcfx/tcoin/storage"
 )
 
+const PktBlockRequest = 1
+const PktBlocks = 2
+const PktTransactions = 3
+
 type PacketBlockRequest struct {
 	MinId int
 	Hash  [storage.SliceKeyLen]byte
@@ -62,7 +66,7 @@ func (p *PacketBlocks) Add(b interface{}, isFull bool) {
 	p.Body = append(p.Body, b)
 }
 
-func NewPakcetBlocks(minId int) PacketBlocks {
+func NewPacketBlocks(minId int) PacketBlocks {
 	return PacketBlocks{
 		MinId:  minId,
 		isFull: make([]byte, 0),

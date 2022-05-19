@@ -64,7 +64,9 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*
 		return nil, fmt.Errorf("failed to listen port %d: %v", c.config.Port, err)
 	}
 	go c.listen()
-	go c.readLoop()
+	for i := 0; i < 4; i++ {
+		go c.readLoop()
+	}
 	go c.maintainSendPeers()
 	go c.maintainPeers()
 	go c.maintainConns()
@@ -74,7 +76,7 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*
 
 func (c *Client) Stop() {
 	c.istop()
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 10; i++ {
 		<-c.stopped
 	}
 }

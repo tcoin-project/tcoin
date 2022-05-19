@@ -21,25 +21,32 @@ type recycle struct {
 	id     SliceKeyType
 }
 
+type SliceChain struct {
+	Key SliceKeyType
+	S   *Slice
+}
+
 type StorageEngine struct {
-	config    StorageEngineConfig
-	ss        map[SliceKeyType]*Slice
-	fa        map[SliceKeyType]SliceKeyType
-	son       map[SliceKeyType][]SliceKeyType
-	data      map[SliceKeyType][]byte
-	ldata     map[int][]byte
-	root      SliceKeyType
-	rq        []recycle
-	fDataPosR *os.File
-	fDataPosW *os.File
-	fDataR    *os.File
-	fDataW    *os.File
-	rootMut   chan bool
-	stop      chan bool
-	stopped   chan bool
-	flush     chan bool
-	flushed   chan error
-	ldMut     sync.Mutex
+	config       StorageEngineConfig
+	ss           map[SliceKeyType]*Slice
+	fa           map[SliceKeyType]SliceKeyType
+	son          map[SliceKeyType][]SliceKeyType
+	data         map[SliceKeyType][]byte
+	ldata        map[int][]byte
+	root         SliceKeyType
+	rq           []recycle
+	fDataPosR    *os.File
+	fDataPosW    *os.File
+	fDataR       *os.File
+	fDataW       *os.File
+	HighestSlice *Slice
+	HighestChain []SliceChain
+	stop         chan bool
+	stopped      chan bool
+	flush        chan bool
+	flushed      chan error
+	ldMut        sync.Mutex
+	rootMut      sync.RWMutex
 }
 
 func NewStorageEngine(config StorageEngineConfig, initSlice *Slice, initKey SliceKeyType, initData []byte) (*StorageEngine, error) {
@@ -64,7 +71,6 @@ func NewStorageEngine(config StorageEngineConfig, initSlice *Slice, initKey Slic
 		ldata:   make(map[int][]byte),
 		root:    SliceKeyType{},
 		rq:      []recycle{},
-		rootMut: make(chan bool, 1),
 		stop:    make(chan bool, 1),
 		stopped: make(chan bool, 1),
 		flush:   make(chan bool, 1),
@@ -149,7 +155,12 @@ func NewStorageEngine(config StorageEngineConfig, initSlice *Slice, initKey Slic
 		e.root = key
 	}
 	e.loadSubtrees()
-	e.rootMut <- true
+	ts := EmptySlice()
+	ts.height = -1
+	e.HighestSlice = ts
+	for k := range e.ss {
+		e.maintainHighest(k)
+	}
 	go e.StoreFinalizedSlices(e.root)
 	return e, nil
 }
@@ -242,6 +253,9 @@ func (e *StorageEngine) AddFreezedSlice(s *Slice, k SliceKeyType, f SliceKeyType
 	if _, ok := e.ss[k]; ok {
 		return errors.New("key already exists in storage engine")
 	}
+	if _, ok := e.ss[f]; !ok {
+		return errors.New("parent not exist in storage engine")
+	}
 	e.ss[k] = s
 	e.fa[k] = f
 	e.data[k] = data
@@ -278,6 +292,7 @@ func (e *StorageEngine) AddFreezedSlice(s *Slice, k SliceKeyType, f SliceKeyType
 	if err != nil {
 		return fmt.Errorf("error when finalizing %s: %v", hex.EncodeToString(k[:]), err)
 	}
+	e.maintainHighest(k)
 	return nil
 }
 
@@ -305,13 +320,37 @@ func (e *StorageEngine) FinalizeSlice(k SliceKeyType) error {
 		e.son[fa] = []SliceKeyType{t}
 		t = fa
 	}
-	select {
-	case <-e.rootMut:
+	if e.rootMut.TryLock() {
 		e.mergeFa(k)
-		e.rootMut <- true
-	default:
+		e.rootMut.Unlock()
 	}
 	return nil
+}
+
+func (e *StorageEngine) maintainHighest(k SliceKeyType) {
+	e.rootMut.RLock()
+	defer e.rootMut.RUnlock()
+	s := e.ss[k]
+	if s.height <= e.HighestSlice.height {
+		return
+	}
+	e.HighestSlice = s
+	ch := make([]SliceChain, 0)
+	for k != e.root {
+		ch = append(ch, SliceChain{
+			Key: k,
+			S:   e.ss[k],
+		})
+		k = e.fa[k]
+	}
+	ch = append(ch, SliceChain{
+		Key: k,
+		S:   e.ss[k],
+	})
+	for i := 0; i*2 < len(ch); i++ {
+		ch[i], ch[len(ch)-i-1] = ch[len(ch)-i-1], ch[i]
+	}
+	e.HighestChain = ch
 }
 
 func (e *StorageEngine) discardSubtree(k SliceKeyType) {
@@ -515,8 +554,7 @@ func (e *StorageEngine) StoreFinalizedSlices(lastRoot SliceKeyType) {
 			continue
 		case <-sleep:
 		}
-		select {
-		case <-e.rootMut:
+		if e.rootMut.TryRLock() {
 			if e.root != lastRoot {
 				ts := time.Now()
 				err := e.storeRoot()
@@ -535,10 +573,14 @@ func (e *StorageEngine) StoreFinalizedSlices(lastRoot SliceKeyType) {
 					sleepTime = time.Second * 30
 				}
 			}
-			e.rootMut <- true
-		default:
+			e.rootMut.RUnlock()
 		}
 	}
+}
+
+func (e *StorageEngine) GetSlice(k SliceKeyType) (*Slice, bool) {
+	t, ok := e.ss[k]
+	return t, ok
 }
 
 func (e *StorageEngine) Flush() error {

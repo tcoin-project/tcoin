@@ -32,6 +32,16 @@ func ForkSlice(base *Slice) *Slice {
 	}
 }
 
+func (s *Slice) Height() int {
+	return s.height
+}
+
+func (s *Slice) Merge() {
+	for k, v := range s.st {
+		s.base.st[k] = v
+	}
+}
+
 func (s *Slice) Read(k KeyType) DataType {
 	u := s
 	for {

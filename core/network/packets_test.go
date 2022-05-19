@@ -31,7 +31,7 @@ func TestSerializationBlockRequest(t *testing.T) {
 
 func TestSerializationBlocks(t *testing.T) {
 	rnd := rand.New(rand.NewSource(114514))
-	p := NewPakcetBlocks(1919810)
+	p := NewPacketBlocks(1919810)
 	blk := &block.Block{
 		Header: block.BlockHeader{
 			ParentHash: block.HashType{1, 2, 4},

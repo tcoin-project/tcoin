@@ -1,7 +1,9 @@
 package block
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -105,6 +107,12 @@ func EncodeTx(w utils.Writer, tx *Transaction) error {
 		return err
 	}
 	return nil
+}
+
+func (tx *Transaction) Hash() HashType {
+	var buf bytes.Buffer
+	EncodeTx(&buf, tx)
+	return sha256.Sum256(buf.Bytes())
 }
 
 func (tx *Transaction) prepareSignData() []byte {
