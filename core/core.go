@@ -433,7 +433,7 @@ func (cn *ChainNode) handleBlocks(p cnet.PacketBlocks) error {
 		} else {
 			bh = bt.(block.BlockHeader)
 		}
-		log.Printf("get block %d %x", p.MinId+i, bh.Hash[:])
+		// log.Printf("get block %d %x", p.MinId+i, bh.Hash[:])
 		cn.unresolvedBlocks.Set(string(bh.Hash[:]), bh, cache.DefaultExpiration)
 		cn.possibleNext.Set(string(bh.ParentHash[:]), bh.Hash, cache.DefaultExpiration)
 	}
@@ -595,7 +595,7 @@ func (cn *ChainNode) SubmitBlock(b *block.Block) error {
 	p := cnet.NewPacketBlocks(-1)
 	cs, err := cn.getConsensusState(-1, b.Header.ParentHash)
 	if err == nil {
-		p.MinId = cs.Height
+		p.MinId = cs.Height + 1
 	}
 	p.Add(b, true)
 	var buf bytes.Buffer
