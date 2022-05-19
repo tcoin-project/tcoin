@@ -46,7 +46,7 @@ type StorageEngine struct {
 	flush        chan bool
 	flushed      chan error
 	ldMut        sync.Mutex
-	rootMut      sync.RWMutex
+	rootMut      chan bool
 }
 
 func NewStorageEngine(config StorageEngineConfig, initSlice *Slice, initKey SliceKeyType, initData []byte) (*StorageEngine, error) {
@@ -75,6 +75,7 @@ func NewStorageEngine(config StorageEngineConfig, initSlice *Slice, initKey Slic
 		flush:   make(chan bool, 1),
 		flushed: make(chan error, 1),
 		ldMut:   sync.Mutex{},
+		rootMut: make(chan bool, 1),
 	}
 	dataFn := filepath.Join(config.Path, "perm", "data")
 	dataPosFn := filepath.Join(config.Path, "perm", "datapos")
@@ -219,7 +220,7 @@ func (e *StorageEngine) loadSubtrees() {
 	}
 	sort.Sort(ss)
 	for _, sc := range ss {
-		d, err := os.ReadFile(e.GetTempFileName(sc.key) + ".b")
+		d, err := ioutil.ReadFile(e.GetTempFileName(sc.key) + ".b")
 		if err != nil || len(d) < SliceKeyLen {
 			continue
 		}
@@ -319,16 +320,20 @@ func (e *StorageEngine) FinalizeSlice(k SliceKeyType) error {
 		e.son[fa] = []SliceKeyType{t}
 		t = fa
 	}
-	if e.rootMut.TryLock() {
+	select {
+	case e.rootMut <- true:
 		e.mergeFa(k)
-		e.rootMut.Unlock()
+		<-e.rootMut
+	default:
 	}
 	return nil
 }
 
 func (e *StorageEngine) maintainHighest(k SliceKeyType) {
-	e.rootMut.RLock()
-	defer e.rootMut.RUnlock()
+	e.rootMut <- true
+	defer func() {
+		<-e.rootMut
+	}()
 	s := e.ss[k]
 	if s.height <= e.HighestSlice.height {
 		return
@@ -553,7 +558,8 @@ func (e *StorageEngine) StoreFinalizedSlices(lastRoot SliceKeyType) {
 			continue
 		case <-sleep:
 		}
-		if e.rootMut.TryRLock() {
+		select {
+		case e.rootMut <- true:
 			if e.root != lastRoot {
 				ts := time.Now()
 				err := e.storeRoot()
@@ -572,7 +578,8 @@ func (e *StorageEngine) StoreFinalizedSlices(lastRoot SliceKeyType) {
 					sleepTime = time.Second * 30
 				}
 			}
-			e.rootMut.RUnlock()
+			<-e.rootMut
+		default:
 		}
 	}
 }

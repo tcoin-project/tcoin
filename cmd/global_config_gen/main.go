@@ -5,8 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
+	"io/ioutil"
 	"log"
-	"os"
 	"time"
 
 	"github.com/mcfx/tcoin/core"
@@ -56,7 +56,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = os.WriteFile("global_config.json", bu, 0o755)
+	err = ioutil.WriteFile("global_config.json", bu, 0o755)
 	if err != nil {
 		log.Fatal(err)
 	}

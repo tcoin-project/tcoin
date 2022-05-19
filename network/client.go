@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net"
 	"os"
@@ -80,7 +81,7 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*
 	go c.maintainConns()
 	go c.broadcastFindPeer()
 	if config.Path != "" {
-		b, err := os.ReadFile(filepath.Join(c.config.Path, "net", "peers.json"))
+		b, err := ioutil.ReadFile(filepath.Join(c.config.Path, "net", "peers.json"))
 		if err == nil {
 			var s []string
 			if err := json.Unmarshal(b, &s); err == nil {
@@ -259,7 +260,7 @@ func (c *Client) maintainSendPeers() {
 		if c.config.Path != "" {
 			b, err := json.Marshal(t)
 			if err == nil {
-				os.WriteFile(filepath.Join(c.config.Path, "net", "peers.json"), b, 0o755)
+				ioutil.WriteFile(filepath.Join(c.config.Path, "net", "peers.json"), b, 0o755)
 			}
 		}
 		te := time.Now()
