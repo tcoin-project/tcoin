@@ -24,6 +24,7 @@ func NewServer(c *core.ChainNode) *Server {
 	s.r.POST("/get_block_candidate", s.getBlockCandidate)
 	s.r.POST("/submit_block", s.submitBlock)
 	s.r.GET("/get_highest", s.getHighest)
+	s.r.POST("/get_account_info", s.getAccountInfo)
 	return s
 }
 
@@ -94,4 +95,8 @@ func (s *Server) getAccountInfo(c *gin.Context) {
 	}
 	ai := s.c.GetAccountInfo(addr)
 	c.JSON(200, gin.H{"status": true, "data": ai})
+}
+
+func (s *Server) Run(addr string) {
+	s.r.Run(addr)
 }

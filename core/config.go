@@ -5,7 +5,7 @@ import (
 	"github.com/mcfx/tcoin/core/consensus"
 )
 
-type TCoinNodeConfig struct {
+type ChainNodeConfig struct {
 	StoragePath          string  `json:"storage_path"`
 	StorageFinalizeDepth int     `json:"storage_finalize_depth"`
 	StorageDumpDiskRatio float64 `json:"storage_dump_disk_ratio"`
@@ -13,7 +13,7 @@ type TCoinNodeConfig struct {
 	MaxConnections       int     `json:"max_connections"`
 }
 
-type TCoinGlobalConfig struct {
+type ChainGlobalConfig struct {
 	ChainId               uint16                    `json:"chain_id"`
 	GenesisBlock          *block.Block              `json:"genesis_block"`
 	GenesisConsensusState *consensus.ConsensusState `json:"genesis_consensus_state"`

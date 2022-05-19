@@ -32,14 +32,14 @@ type ChainNode struct {
 	txChan              chan *block.Transaction
 	checkUnBlocks       chan bool
 	broadcastBlocks     chan bool
-	config              TCoinNodeConfig
-	gConfig             TCoinGlobalConfig
+	config              ChainNodeConfig
+	gConfig             ChainGlobalConfig
 	stop                chan bool
 	stopped             chan bool
 	seMut               sync.Mutex
 }
 
-func NewChainNode(config TCoinNodeConfig, gConfig TCoinGlobalConfig) (*ChainNode, error) {
+func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig) (*ChainNode, error) {
 	if gConfig.GenesisBlock.Header.ComputeHash() != gConfig.GenesisBlock.Header.Hash {
 		return nil, errors.New("failed to init node: header hash mismatch")
 	}
