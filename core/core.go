@@ -336,6 +336,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 		ti := cn.unresolvedBlocks.Items()
 		vis := make(map[block.HashType]bool)
 		var mark func(k block.HashType)
+		ask := []block.HashType{}
 		any := false
 		mark = func(k block.HashType) {
 			if _, ok := vis[k]; ok {
@@ -349,6 +350,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			}
 			t, ok := ti[string(k[:])]
 			if !ok {
+				ask = append(ask, k)
 				return
 			}
 			bh := t.Object.(block.BlockHeader)
@@ -400,6 +402,18 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 		}
 		if any {
 			cn.broadcastBlocks <- true
+		}
+		for _, k := range ask {
+			p := cnet.PacketBlockRequest{
+				MinId: -1,
+				Hash:  k,
+			}
+			var buf bytes.Buffer
+			buf.WriteByte(cnet.PktBlockRequest)
+			err := cnet.EncodeBlockRequest(&buf, p)
+			if err != nil {
+				cn.nc.Broadcast(buf.Bytes(), 3)
+			}
 		}
 	}
 }
