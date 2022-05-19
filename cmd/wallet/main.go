@@ -17,6 +17,24 @@ import (
 
 const rpcUrl = "https://uarpc.mcfx.us/"
 
+func readWallet(addr string) block.AccountInfo {
+	data, _ := json.Marshal(map[string]string{"addr": addr})
+	resp, err := http.Post(rpcUrl+"get_account_info", "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		panic(err)
+	}
+	var res struct {
+		Status bool              `json:"status"`
+		Msg    string            `json:"msg"`
+		Data   block.AccountInfo `json:"data"`
+	}
+	json.NewDecoder(resp.Body).Decode(&res)
+	if !res.Status {
+		panic(res.Msg)
+	}
+	return res.Data
+}
+
 func main() {
 	op := os.Args[1]
 	if op == "genWallet" {
@@ -29,22 +47,9 @@ func main() {
 		addr := block.PubkeyToAddress(pubkey)
 		eaddr := address.EncodeAddr(addr)
 		fmt.Printf("Address: %s\n", eaddr)
-		data, _ := json.Marshal(map[string]string{"addr": eaddr})
-		resp, err := http.Post(rpcUrl+"get_account_info", "application/json", bytes.NewBuffer(data))
-		if err != nil {
-			panic(err)
-		}
-		var res struct {
-			Status bool              `json:"status"`
-			Msg    string            `json:"msg"`
-			Data   block.AccountInfo `json:"data"`
-		}
-		json.NewDecoder(resp.Body).Decode(&res)
-		if !res.Status {
-			panic(res.Msg)
-		}
-		fmt.Printf("Balance: %f\n", float64(res.Data.Balance)/1e9)
-		fmt.Printf("Nonce: %d\n", res.Data.Nonce)
+		ai := readWallet(eaddr)
+		fmt.Printf("Balance: %f\n", float64(ai.Balance)/1e9)
+		fmt.Printf("Nonce: %d\n", ai.Nonce)
 	} else if op == "transfer" {
 		t, _ := hex.DecodeString(os.Args[2])
 		to := os.Args[3]
@@ -61,6 +66,10 @@ func main() {
 		var privkey block.PrivkeyType
 		copy(pubkey[:], t[32:])
 		copy(privkey[:], t)
+		addr := block.PubkeyToAddress(pubkey)
+		eaddr := address.EncodeAddr(addr)
+		fmt.Printf("Address: %s\n", eaddr)
+		ai := readWallet(eaddr)
 		tx := &block.Transaction{
 			TxType:       1,
 			SenderPubkey: pubkey,
@@ -68,7 +77,7 @@ func main() {
 			Value:        uint64(amount),
 			GasLimit:     0,
 			Fee:          0,
-			Nonce:        0,
+			Nonce:        ai.Nonce,
 			Data:         []byte{},
 		}
 		tx.Sign(privkey)
