@@ -26,6 +26,7 @@ func NewServer(c *core.ChainNode) *Server {
 	s.r.POST("/submit_block", s.submitBlock)
 	s.r.GET("/get_highest", s.getHighest)
 	s.r.POST("/get_account_info", s.getAccountInfo)
+	s.r.POST("/submit_tx", s.submitTx)
 	return s
 }
 
@@ -106,6 +107,25 @@ func (s *Server) getAccountInfo(c *gin.Context) {
 	}
 	ai := s.c.GetAccountInfo(addr)
 	c.JSON(200, gin.H{"status": true, "data": ai})
+}
+
+func (s *Server) submitTx(c *gin.Context) {
+	var body struct {
+		Tx []byte `json:"tx"`
+	}
+	c.BindJSON(&body)
+	buf := bytes.NewBuffer(body.Tx)
+	tx, err := block.DecodeTx(buf)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	err = s.c.SubmitTx(tx)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+	} else {
+		c.JSON(200, gin.H{"status": true})
+	}
 }
 
 func (s *Server) Run(addr string) {

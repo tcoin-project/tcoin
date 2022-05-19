@@ -630,3 +630,9 @@ func (cn *ChainNode) GetAccountInfo(addr block.AddressType) block.AccountInfo {
 	defer cn.seMut.Unlock()
 	return block.GetAccountInfo(cn.se.HighestSlice, addr)
 }
+
+func (cn *ChainNode) SubmitTx(tx *block.Transaction) error {
+	return cn.handleTransactions(cnet.PacketTransactions{
+		Txs: []*block.Transaction{tx},
+	})
+}
