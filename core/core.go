@@ -77,6 +77,7 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig) (*ChainNode
 	nc, err := network.NewClient(&network.ClientConfig{
 		Port:           config.ListenPort,
 		MaxConnections: config.MaxConnections,
+		Path:           config.StoragePath,
 	}, rchan, gConfig.ChainId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init node: %v", err)

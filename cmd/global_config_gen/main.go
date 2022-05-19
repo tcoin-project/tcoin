@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"log"
 	"os"
@@ -27,6 +29,11 @@ func main() {
 		b.Header.ParentHash[i] = 0x22
 	}
 	b.FillHash()
+	df := block.HashType{0, 0, 0, 0xf}
+	for i := 0; bytes.Compare(b.Header.Hash[:], df[:]) > 0; i++ {
+		binary.LittleEndian.PutUint64(b.Header.ExtraData[:8], uint64(i))
+		b.Header.Hash = b.Header.ComputeHash()
+	}
 	var bi uint64 = 1000000000
 	gConfig := core.ChainGlobalConfig{
 		ChainId:      8888,
@@ -35,7 +42,7 @@ func main() {
 			Height:           -1,
 			LastBlockTime:    0,
 			LastKeyBlockTime: 0,
-			Difficulty:       block.HashType{0xff},
+			Difficulty:       df,
 		},
 		GenesisBlockReward: bi * 10000000,
 		BlockReward:        bi,

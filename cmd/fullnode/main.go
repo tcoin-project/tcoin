@@ -14,6 +14,7 @@ func main() {
 	cfn := flag.String("config", "", "config file")
 	gcfn := flag.String("globalConfig", "", "global config file")
 	rpcAddr := flag.String("rpc", "", "rpc listen addr")
+	flag.Parse()
 	if *cfn == "" {
 		log.Fatal("no config file provided")
 	}

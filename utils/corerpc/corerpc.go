@@ -2,6 +2,7 @@ package corerpc
 
 import (
 	"bytes"
+	"encoding/hex"
 
 	"github.com/mcfx/tcoin/core"
 	"github.com/mcfx/tcoin/core/block"
@@ -30,16 +31,26 @@ func NewServer(c *core.ChainNode) *Server {
 
 func (s *Server) getBlockCandidate(c *gin.Context) {
 	var body struct {
-		Miner block.AddressType `json:"miner"`
+		Addr string `json:"addr"`
 	}
 	c.BindJSON(&body)
-	b := s.c.GetBlockCandidate(body.Miner)
+	addr, err := address.ParseAddr(body.Addr)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	_, cs, err := s.c.GetHighest()
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	b := s.c.GetBlockCandidate(addr)
 	var buf bytes.Buffer
-	err := block.EncodeBlock(&buf, b)
+	err = block.EncodeBlock(&buf, b)
 	if err != nil {
 		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
 	} else {
-		c.JSON(200, gin.H{"status": true, "block": buf.Bytes()})
+		c.JSON(200, gin.H{"status": true, "block": buf.Bytes(), "difficulty": hex.EncodeToString(cs.Difficulty[:])})
 	}
 }
 
