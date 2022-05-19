@@ -80,7 +80,10 @@ func main() {
 					return err
 				}
 				var res map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&res)
+				err = json.NewDecoder(resp.Body).Decode(&res)
+				if err != nil {
+					return err
+				}
 				if !res["status"].(bool) {
 					return errors.New(res["msg"].(string))
 				}
@@ -101,7 +104,10 @@ func main() {
 				return err
 			}
 			var res map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&res)
+			err = json.NewDecoder(resp.Body).Decode(&res)
+			if err != nil {
+				return err
+			}
 			if !res["status"].(bool) {
 				return errors.New(res["msg"].(string))
 			}
