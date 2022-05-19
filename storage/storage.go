@@ -61,7 +61,6 @@ func NewStorageEngine(config StorageEngineConfig, initSlice *Slice, initKey Slic
 	if err != nil {
 		return nil, fmt.Errorf("error when creating storage engine: %v", err)
 	}
-	// todo: init, read file, fdata
 	e := &StorageEngine{
 		config:  config,
 		ss:      make(map[SliceKeyType]*Slice),

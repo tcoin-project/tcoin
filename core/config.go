@@ -19,4 +19,5 @@ type ChainGlobalConfig struct {
 	GenesisConsensusState *consensus.ConsensusState `json:"genesis_consensus_state"`
 	GenesisBlockReward    uint64                    `json:"genesis_block_reward"`
 	BlockReward           uint64                    `json:"block_reward"`
+	SeedNodes             []string                  `json:"seed_nodes"`
 }

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -59,6 +61,12 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*
 	if err != nil {
 		return nil, fmt.Errorf("failed to set up client nonce: %v", err)
 	}
+	if config.Path != "" {
+		err = os.MkdirAll(filepath.Join(config.Path, "net"), 0o755)
+		if err != nil {
+			return nil, fmt.Errorf("error when creating network client: %v", err)
+		}
+	}
 	c.ln, err = reuseport.Listen("tcp", ":"+strconv.Itoa(c.config.Port))
 	if err != nil {
 		return nil, fmt.Errorf("failed to listen port %d: %v", c.config.Port, err)
@@ -71,6 +79,15 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*
 	go c.maintainPeers()
 	go c.maintainConns()
 	go c.broadcastFindPeer()
+	if config.Path != "" {
+		b, err := os.ReadFile(filepath.Join(c.config.Path, "net", "peers.json"))
+		if err == nil {
+			var s []string
+			if err := json.Unmarshal(b, &s); err == nil {
+				c.AddPeers(s)
+			}
+		}
+	}
 	return c, nil
 }
 
@@ -239,6 +256,12 @@ func (c *Client) maintainSendPeers() {
 		c.allPeerCons = t
 		c.sendPeers, _ = json.Marshal(tu)
 		c.peersMut.Unlock()
+		if c.config.Path != "" {
+			b, err := json.Marshal(t)
+			if err == nil {
+				os.WriteFile(filepath.Join(c.config.Path, "net", "peers.json"), b, 0o755)
+			}
+		}
 		te := time.Now()
 		slp := time.After(te.Sub(ts)*10 + time.Second)
 		select {

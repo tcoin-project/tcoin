@@ -26,6 +26,7 @@ var errSelf = errors.New("conneting to self")
 type ClientConfig struct {
 	Port           int
 	MaxConnections int
+	Path           string
 }
 
 func connStrId(s string) int {

@@ -81,6 +81,9 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig) (*ChainNode
 	if err != nil {
 		return nil, fmt.Errorf("failed to init node: %v", err)
 	}
+	if len(gConfig.SeedNodes) > 0 {
+		nc.AddPeers(gConfig.SeedNodes)
+	}
 	cn := &ChainNode{
 		se:                  se,
 		unresolvedBlocks:    cache.New(time.Minute*5, time.Minute*10),
