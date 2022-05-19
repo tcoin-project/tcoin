@@ -18,7 +18,13 @@ func checkSum(addr block.AddressType) byte {
 
 func ParseAddr(addr string) (block.AddressType, error) {
 	var ra block.AddressType
-	buf, err := base58.Decode(addr)
+	if len(addr) < 5 {
+		return ra, errors.New("addr len invalid")
+	}
+	if addr[:5] != "tcoin" {
+		return ra, errors.New("addr prefix mismatch")
+	}
+	buf, err := base58.Decode(addr[5:])
 	if err != nil {
 		return ra, err
 	}
