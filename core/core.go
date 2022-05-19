@@ -108,7 +108,7 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig) (*ChainNode
 
 func (cn *ChainNode) Stop() {
 	cn.istop()
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 10; i++ {
 		<-cn.stopped
 	}
 }
@@ -128,6 +128,7 @@ func (cn *ChainNode) Run() {
 	go cn.broadcastTxsLoop()
 	go cn.checkUnresolvedBlocks()
 	go cn.syncLoop()
+	go cn.sendMyHighest()
 	for {
 		slp := time.After(time.Second * 10)
 		select {
@@ -304,7 +305,7 @@ func (cn *ChainNode) handleBlockRequest(p cnet.PacketBlockRequest, peerId, maxRe
 	return nil
 }
 
-func (cn *ChainNode) sendHighest(peerId int, hs *storage.Slice, hc []storage.SliceChain) error {
+func (cn *ChainNode) sendHighest(peerId int, hs *storage.Slice, hc []storage.SliceChain, broadcast bool) error {
 	rp := cnet.NewPacketBlocks(hs.Height())
 	b, err := cn.getBlock(hs.Height(), block.HashType(hc[len(hc)-1].Key))
 	if err != nil {
@@ -316,7 +317,11 @@ func (cn *ChainNode) sendHighest(peerId int, hs *storage.Slice, hc []storage.Sli
 	if err != nil {
 		return err
 	}
-	cn.nc.WriteTo(peerId, buf.Bytes())
+	if broadcast {
+		cn.nc.Broadcast(buf.Bytes(), cn.config.MaxConnections)
+	} else {
+		cn.nc.WriteTo(peerId, buf.Bytes())
+	}
 	return nil
 }
 
@@ -482,7 +487,7 @@ func (cn *ChainNode) syncLoop() {
 			id := int(binary.LittleEndian.Uint64([]byte(k)))
 			h := v.Object.(int)
 			if h < mh-3 {
-				cn.sendHighest(id, hs, hc)
+				cn.sendHighest(id, hs, hc, false)
 			} else if h < mh {
 				if rand.Intn(4) == 0 {
 					hs := block.HashType{}
@@ -496,7 +501,7 @@ func (cn *ChainNode) syncLoop() {
 				}
 			} else if h > mh {
 				if rand.Intn(5) == 1 {
-					cn.sendHighest(id, hs, hc)
+					cn.sendHighest(id, hs, hc, false)
 				}
 				if remReq > 0 {
 					hs := block.HashType{}
@@ -518,6 +523,23 @@ func (cn *ChainNode) syncLoop() {
 				}
 			}
 		}
+	}
+}
+
+func (cn *ChainNode) sendMyHighest() {
+	defer cn.istop()
+	for {
+		slp := time.After(time.Second * 30)
+		select {
+		case <-slp:
+		case <-cn.stop:
+			return
+		}
+		cn.seMut.Lock()
+		hs := cn.se.HighestSlice
+		hc := cn.se.HighestChain
+		cn.seMut.Unlock()
+		cn.sendHighest(0, hs, hc, true)
 	}
 }
 
