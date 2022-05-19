@@ -19,6 +19,15 @@ type ConsensusState struct {
 const PeriodBlockCount = 30
 const PeriodTime = 300 // 10s per block
 
+func (cs *ConsensusState) Copy() *ConsensusState {
+	return &ConsensusState{
+		Height:           cs.Height,
+		LastBlockTime:    cs.LastBlockTime,
+		LastKeyBlockTime: cs.LastKeyBlockTime,
+		Difficulty:       cs.Difficulty,
+	}
+}
+
 func (cs *ConsensusState) CheckAndUpdate(blk *block.Block) bool {
 	if bytes.Compare(blk.Header.Hash[:], cs.Difficulty[:]) > 0 {
 		return false

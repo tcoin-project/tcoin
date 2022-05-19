@@ -63,7 +63,7 @@ func startTestNode(t *testing.T, portBase, id int) *ChainNode {
 	return cn
 }
 
-func genTestBlocks(n int) []*block.Block {
+func genTestBlocks(n int, ko int) []*block.Block {
 	var bi = 1000000000
 	pub, _ := testKeyPair(1)
 	res := make([]*block.Block, 0)
@@ -79,7 +79,7 @@ func genTestBlocks(n int) []*block.Block {
 			Txs:   []*block.Transaction{},
 		}
 		b.FillHash()
-		for j := 1; b.Header.Hash[0] != 0; j++ {
+		for j := ko; b.Header.Hash[0] != 0; j++ {
 			binary.BigEndian.PutUint64(b.Header.ExtraData[:8], uint64(j))
 			b.Header.Hash = b.Header.ComputeHash()
 		}
@@ -95,7 +95,7 @@ func testTwoNodes(t *testing.T, n, pb int) {
 	cn1.nc.AddPeers([]string{"127.0.0.1:" + strconv.Itoa(pb+2)})
 	go cn1.Run()
 	go cn2.Run()
-	bs := genTestBlocks(n)
+	bs := genTestBlocks(n, 1)
 	time.Sleep(time.Second * 10)
 	for i, b := range bs {
 		log.Printf("feed block %d", i+1)
@@ -113,7 +113,7 @@ func testTwoNodes(t *testing.T, n, pb int) {
 	if cs1.Height < n-2 {
 		t.Fatal("node1 height too small")
 	}
-	_, cs2, err := cn1.GetHighest()
+	_, cs2, err := cn2.GetHighest()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func testTwoNodesInitSync(t *testing.T, n, n2, pb int, fast bool) {
 	cn2 := startTestNode(t, pb, 2)
 	go cn1.Run()
 	go cn2.Run()
-	bs := genTestBlocks(n)
+	bs := genTestBlocks(n, 1)
 	for i, b := range bs {
 		log.Printf("feed block %d", i+1)
 		err := cn2.SubmitBlock(b)
@@ -160,7 +160,7 @@ func testTwoNodesInitSync(t *testing.T, n, n2, pb int, fast bool) {
 	if cs1.Height < n-2 {
 		t.Fatal("node1 height too small")
 	}
-	_, cs2, err := cn1.GetHighest()
+	_, cs2, err := cn2.GetHighest()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,4 +177,47 @@ func TestCore3(t *testing.T) {
 
 func TestCore4(t *testing.T) {
 	testTwoNodesInitSync(t, 100, 67, 24000, true)
+}
+
+func TestFork(t *testing.T) {
+	pb := 25000
+	cn1 := startTestNode(t, pb, 1)
+	cn2 := startTestNode(t, pb, 2)
+	go cn1.Run()
+	go cn2.Run()
+	n := 17
+	bs1 := genTestBlocks(n, 1)
+	bs2 := genTestBlocks(7, 100000000000000)
+	for i, b := range bs1 {
+		log.Printf("feed block %d", i+1)
+		err := cn1.SubmitBlock(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, b := range bs2 {
+		log.Printf("feed block %d", i+1)
+		err := cn2.SubmitBlock(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	cn1.nc.AddPeers([]string{"127.0.0.1:" + strconv.Itoa(pb+2)})
+	time.Sleep(time.Second * 100)
+	_, cs1, err := cn1.GetHighest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cs1.Height < n-2 {
+		t.Fatal("node1 height too small")
+	}
+	_, cs2, err := cn2.GetHighest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cs2.Height < n-2 {
+		t.Fatal("node2 height too small")
+	}
+	cn1.Stop()
+	cn2.Stop()
 }

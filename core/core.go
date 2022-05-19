@@ -335,10 +335,13 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 		}
 		ti := cn.unresolvedBlocks.Items()
 		vis := make(map[block.HashType]bool)
-		var mark func(k block.HashType)
+		var mark func(k block.HashType, dep int)
 		ask := []block.HashType{}
 		any := false
-		mark = func(k block.HashType) {
+		mark = func(k block.HashType, dep int) {
+			if dep > cn.config.StorageFinalizeDepth+3 {
+				return
+			}
 			if _, ok := vis[k]; ok {
 				return
 			}
@@ -354,7 +357,8 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 				return
 			}
 			bh := t.Object.(block.BlockHeader)
-			mark(bh.ParentHash)
+			//log.Printf("checkfa: %x %x", k[:], bh.ParentHash[:])
+			mark(bh.ParentHash, dep+1)
 			bt, ok := cn.blockCache.Get(string(k[:]))
 			if !ok {
 				return
@@ -368,6 +372,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			if err != nil {
 				return
 			}
+			cs = cs.Copy()
 			if !cs.CheckAndUpdate(b) {
 				return
 			}
@@ -398,7 +403,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 		var tk block.HashType
 		for k := range ti {
 			copy(tk[:], []byte(k))
-			mark(tk)
+			mark(tk, 0)
 		}
 		if any {
 			cn.broadcastBlocks <- true
@@ -411,7 +416,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			var buf bytes.Buffer
 			buf.WriteByte(cnet.PktBlockRequest)
 			err := cnet.EncodeBlockRequest(&buf, p)
-			if err != nil {
+			if err == nil {
 				cn.nc.Broadcast(buf.Bytes(), 3)
 			}
 		}
@@ -428,6 +433,7 @@ func (cn *ChainNode) handleBlocks(p cnet.PacketBlocks) error {
 		} else {
 			bh = bt.(block.BlockHeader)
 		}
+		// log.Printf("get block %d %x", p.MinId+i, bh.Hash[:])
 		cn.unresolvedBlocks.Set(string(bh.Hash[:]), bh, cache.DefaultExpiration)
 		cn.possibleNext.Set(string(bh.ParentHash[:]), bh.Hash[:], cache.DefaultExpiration)
 	}
