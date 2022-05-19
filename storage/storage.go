@@ -560,7 +560,7 @@ func (e *StorageEngine) StoreFinalizedSlices(lastRoot SliceKeyType) {
 				err := e.storeRoot()
 				te := time.Now()
 				if err == nil {
-					log.Printf("stored root slice %s at height %d: %v", hex.EncodeToString(e.root[:]), e.ss[e.root].height, err)
+					// log.Printf("stored root slice %s at height %d: %v", hex.EncodeToString(e.root[:]), e.ss[e.root].height, err)
 					lastRoot = e.root
 					ft := float64(te.Sub(ts).Nanoseconds()) / e.config.DumpDiskRatio * (1 - e.config.DumpDiskRatio)
 					if ft < 3600000000000 {

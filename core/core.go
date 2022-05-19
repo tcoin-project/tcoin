@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -167,7 +168,14 @@ func (cn *ChainNode) readLoop() {
 				if p.MinId != -1 {
 					tmp := make([]byte, 8)
 					binary.LittleEndian.PutUint64(tmp, uint64(cp.PeerId))
-					cn.neighborHeight.Set(string(tmp), p.MinId+len(p.Body)-1, cache.DefaultExpiration)
+					t, ok := cn.neighborHeight.Get(string(tmp))
+					np := p.MinId + len(p.Body) - 1
+					if ok {
+						if t.(int) > np {
+							np = t.(int)
+						}
+					}
+					cn.neighborHeight.Set(string(tmp), np, cache.DefaultExpiration)
 				}
 				return cn.handleBlocks(p)
 			} else if opcode == cnet.PktTransactions {
@@ -254,13 +262,15 @@ func (cn *ChainNode) handleBlockRequest(p cnet.PacketBlockRequest, peerId, maxRe
 		}
 		mh := hc[0].S.Height()
 		if p.MinId >= mh && hc[p.MinId-mh].Key != p.Hash && p.Hash != (block.HashType{}) {
-			return rp, errors.New("invalid chain")
+			return rp, fmt.Errorf("invalid chain: id=%d mh=%d hs=%x my=%x", p.MinId, mh, p.Hash[:], hc[p.MinId-mh].Key[:])
 		}
 		rp.MinId = p.MinId
 		for i := 0; i < maxReturn; i++ {
 			h := block.HashType{}
-			if i == 0 {
+			if i == 0 && p.Hash != (block.HashType{}) {
 				h = p.Hash
+			} else if p.MinId+i-mh >= len(hc) {
+				break
 			} else if p.MinId+i >= mh {
 				h = block.HashType(hc[p.MinId+i-mh].Key)
 			}
@@ -273,6 +283,7 @@ func (cn *ChainNode) handleBlockRequest(p cnet.PacketBlockRequest, peerId, maxRe
 		return rp, nil
 	}()
 	if err != nil {
+		log.Printf("handleBlockRequest error: %v", err)
 		rp = cnet.NewPacketBlocks(hs.Height())
 		b, err := cn.getBlock(hs.Height(), block.HashType(hc[len(hc)-1].Key))
 		if err != nil {
@@ -338,6 +349,10 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 				return
 			}
 			b := bt.(*block.Block)
+			if b.Time > math.MaxInt64 || time.Unix(0, int64(b.Time)).After(time.Now().Add(time.Minute)) {
+				cn.unresolvedBlocks.Delete(string(k[:]))
+				return
+			}
 			cs, err := cn.getConsensusState(0, bh.ParentHash)
 			if err != nil {
 				return
@@ -363,6 +378,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 					sln.Freeze()
 					cn.se.AddFreezedSlice(sln, storage.SliceKeyType(k), storage.SliceKeyType(bh.ParentHash), buf.Bytes())
 					cn.unresolvedBlocks.Delete(string(k[:]))
+					// log.Printf("add block: %x", b.Header.Hash[:])
 					any = true
 				}
 			}
@@ -457,38 +473,44 @@ func (cn *ChainNode) syncLoop() {
 		cn.seMut.Unlock()
 		mh := hc[len(hc)-1].S.Height()
 		nh := cn.neighborHeight.Items()
+		remReq := 2
 		for k, v := range nh {
 			id := int(binary.LittleEndian.Uint64([]byte(k)))
 			h := v.Object.(int)
 			if h < mh-3 {
 				cn.sendHighest(id, hs, hc)
 			} else if h < mh {
-				hs := block.HashType{}
-				if h > hc[0].S.Height() {
-					hs = block.HashType(hc[h-hc[0].S.Height()].Key)
+				if rand.Intn(4) == 0 {
+					hs := block.HashType{}
+					if h > hc[0].S.Height() {
+						hs = block.HashType(hc[h+1-hc[0].S.Height()].Key)
+					}
+					cn.handleBlockRequest(cnet.PacketBlockRequest{
+						MinId: h + 1,
+						Hash:  hs,
+					}, id, 5)
 				}
-				cn.handleBlockRequest(cnet.PacketBlockRequest{
-					MinId: h + 1,
-					Hash:  hs,
-				}, id, 5)
 			} else if h > mh {
 				if rand.Intn(5) == 1 {
 					cn.sendHighest(id, hs, hc)
 				}
-				hs := block.HashType{}
-				t, ok := cn.possibleNext.Get(string(hc[len(hc)-1].Key[:]))
-				if ok {
-					hs = t.(block.HashType)
-				}
-				p := cnet.PacketBlockRequest{
-					MinId: mh + 1,
-					Hash:  hs,
-				}
-				var buf bytes.Buffer
-				buf.WriteByte(cnet.PktBlockRequest)
-				err := cnet.EncodeBlockRequest(&buf, p)
-				if err == nil {
-					cn.nc.WriteTo(id, buf.Bytes())
+				if remReq > 0 {
+					hs := block.HashType{}
+					t, ok := cn.possibleNext.Get(string(hc[len(hc)-1].Key[:]))
+					if ok {
+						hs = t.(block.HashType)
+					}
+					p := cnet.PacketBlockRequest{
+						MinId: mh + 1,
+						Hash:  hs,
+					}
+					var buf bytes.Buffer
+					buf.WriteByte(cnet.PktBlockRequest)
+					err := cnet.EncodeBlockRequest(&buf, p)
+					if err == nil {
+						cn.nc.WriteTo(id, buf.Bytes())
+						remReq--
+					}
 				}
 			}
 		}
@@ -520,12 +542,13 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 }
 
 func (cn *ChainNode) SubmitBlock(b *block.Block) error {
+	// log.Printf("submit block: %x", b.Header.Hash[:])
 	cn.blockCache.Set(string(b.Header.Hash[:]), b, cache.DefaultExpiration)
 	cn.unresolvedBlocks.Set(string(b.Header.Hash[:]), b.Header, cache.DefaultExpiration)
 	cn.checkUnBlocks <- true
 	p := cnet.NewPacketBlocks(-1)
 	cs, err := cn.getConsensusState(-1, b.Header.ParentHash)
-	if err != nil {
+	if err == nil {
 		p.MinId = cs.Height
 	}
 	p.Add(b, true)
