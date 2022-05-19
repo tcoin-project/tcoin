@@ -555,3 +555,9 @@ func (cn *ChainNode) GetHighest() (*block.Block, *consensus.ConsensusState, erro
 	}
 	return b, c, nil
 }
+
+func (cn *ChainNode) GetAccountInfo(addr block.AddressType) block.AccountInfo {
+	cn.seMut.Lock()
+	defer cn.seMut.Unlock()
+	return block.GetAccountInfo(cn.se.HighestSlice, addr)
+}

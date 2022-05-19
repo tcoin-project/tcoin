@@ -7,8 +7,8 @@ import (
 )
 
 type AccountInfo struct {
-	Balance uint64
-	Nonce   uint64
+	Balance uint64 `json:"balance"`
+	Nonce   uint64 `json:"nonce"`
 }
 
 func GetAccountInfo(s *storage.Slice, address AddressType) AccountInfo {
