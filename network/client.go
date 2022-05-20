@@ -388,7 +388,7 @@ func (c *Client) maintainConns() {
 		q := []int{}
 		c.peersMut.Lock()
 		for id, p := range c.peers {
-			if p != nil && p.Stopped() {
+			if p == nil || p.Stopped() {
 				q = append(q, id)
 			}
 		}
