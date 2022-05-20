@@ -145,7 +145,7 @@ func (cn *ChainNode) Run() {
 		c1, c2 := cn.nc.GetPeerCount()
 		b, c, err := cn.GetHighest()
 		if err != nil {
-			log.Printf("nodes: %d (%d active) height error: %v", c1, c2, err)
+			log.Printf("nodes: %d (%d active) error: %v", c1, c2, err)
 		} else {
 			log.Printf("nodes: %d (%d active) height: %d (%x)", c1, c2, c.Height, b.Header.Hash[:])
 		}

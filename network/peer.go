@@ -71,7 +71,7 @@ func NewPeer(id int, conn net.Conn, rq chan peerPacket, networkId uint16, cnonce
 	if bytes.Equal(buf2[PeerHelloNonceLen+8:], cnonce) {
 		return nil, errSelf
 	}
-	go p.readFunc()
+	go p.readLoop()
 	go p.writeLoop()
 	go p.heartBeat()
 	return p, nil
@@ -106,7 +106,7 @@ func (p *Peer) istop() {
 	p.conn.Close()
 }
 
-func (p *Peer) readFunc() {
+func (p *Peer) readLoop() {
 	defer p.istop()
 	for {
 		p.conn.SetDeadline(time.Now().Add(MaxTimeout))

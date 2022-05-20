@@ -125,11 +125,12 @@ func (c *Client) handleConn(id int, conn net.Conn) {
 	go func() {
 		p, err := NewPeer(id, conn, c.cpp, c.networkId, c.nonce)
 		if err == nil {
+			rm := conn.RemoteAddr().String()
 			c.peersMut.Lock()
 			if p2, ok := c.peers[id]; !ok || p2 == nil {
 				//log.Printf("conn: %s - %s", conn.LocalAddr().String(), conn.RemoteAddr().String())
 				c.peers[id] = p
-				c.peerCon[id] = conn.RemoteAddr().String()
+				c.peerCon[id] = rm
 			}
 			c.peersMut.Unlock()
 		} else if errors.Is(err, errNetworkIdMismatch) || errors.Is(err, errSelf) {
@@ -288,10 +289,11 @@ func (c *Client) broadcast(pkt packet, count int) {
 	bpeers := make([]*Peer, count)
 	bpeers = bpeers[:0]
 	c.peersMut.Lock()
-	for i := 0; i < count && i < len(c.allPeers); i++ {
+	le := len(c.allPeers)
+	for i := 0; i < count && i < le; i++ {
 		var x int
 		for {
-			x = rand.Intn(len(c.allPeers))
+			x = rand.Intn(le)
 			flag := true
 			for j := 0; j < i; j++ {
 				if o[j] == x {
@@ -332,6 +334,23 @@ func (c *Client) Broadcast(data []byte, count int) {
 	}, count)
 }
 
+func (c *Client) tryConn(id int, host string) {
+	la, _ := net.ResolveTCPAddr("tcp", ":"+strconv.Itoa(c.config.Port))
+	d := net.Dialer{
+		Timeout:   DialTimeout,
+		Control:   reuseport.Control,
+		LocalAddr: la,
+	}
+	conn, err := d.Dial("tcp", host)
+	if err == nil {
+		c.peersMut.Lock()
+		if _, ok := c.peers[id]; !ok {
+			c.handleConn(id, conn)
+		}
+		c.peersMut.Unlock()
+	}
+}
+
 func (c *Client) maintainPeers() {
 	defer c.istop()
 	for {
@@ -348,20 +367,8 @@ func (c *Client) maintainPeers() {
 				px := c.allPeerCons[x]
 				id := connStrId(px)
 				if _, ok := c.peers[id]; !ok {
-					c.peersMut.Unlock()
-					la, _ := net.ResolveTCPAddr("tcp", ":"+strconv.Itoa(c.config.Port))
-					d := net.Dialer{
-						Timeout:   DialTimeout,
-						Control:   reuseport.Control,
-						LocalAddr: la,
-					}
-					conn, err := d.Dial("tcp", px)
-					c.peersMut.Lock()
-					if err == nil {
-						if _, ok := c.peers[id]; !ok {
-							c.handleConn(id, conn)
-						}
-					}
+					c.peers[id] = nil
+					go c.tryConn(id, px)
 				}
 			}
 		}
@@ -387,7 +394,7 @@ func (c *Client) maintainConns() {
 		}
 		c.peersMut.Unlock()
 		for _, id := range q {
-			c.DiscardPeer(id, time.Duration(0))
+			go c.DiscardPeer(id, time.Duration(0))
 		}
 	}
 }
