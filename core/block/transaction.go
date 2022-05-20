@@ -145,7 +145,7 @@ func ExecuteTx(tx *Transaction, s *storage.Slice) error {
 		return errors.New("integer overflow")
 	}
 	if senderAccount.Balance < totalValue {
-		return errors.New("balance not enought")
+		return errors.New("balance not enough")
 	}
 	if senderAccount.Nonce != tx.Nonce {
 		return errors.New("nonce mismatch")
