@@ -294,7 +294,7 @@ func (cn *ChainNode) handleBlockRequest(p cnet.PacketBlockRequest, peerId, maxRe
 		return rp, nil
 	}()
 	if err != nil {
-		log.Printf("handleBlockRequest error: %v", err)
+		// log.Printf("handleBlockRequest error: %v", err)
 		rp = cnet.NewPacketBlocks(hs.Height())
 		b, err := cn.getBlock(hs.Height(), block.HashType(hc[len(hc)-1].Key))
 		if err != nil {
@@ -671,7 +671,7 @@ func (cn *ChainNode) GetBlock(height int) (*block.Block, *consensus.ConsensusSta
 	cn.seMut.Unlock()
 	mh := hc[len(hc)-1].S.Height()
 	hash := block.HashType{}
-	if height >= mh {
+	if height <= mh {
 		hash = block.HashType(hc[height-hc[0].S.Height()].Key)
 	}
 	b, err := cn.getBlock(height, hash)

@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/mcfx/tcoin/core/block"
+	"github.com/mcfx/tcoin/core/consensus"
 	"github.com/mcfx/tcoin/storage"
 	"github.com/mcfx/tcoin/utils/address"
 )
@@ -70,14 +71,24 @@ func explorerTransferCallback(s *storage.Slice, from block.AddressType, to block
 		k := storage.KeyType{0xf1}
 		copy(k[1:1+block.HashLen], txh[:])
 		v2 := storage.DataType{}
-		binary.LittleEndian.PutUint64(v2[:8], uint64(ctx.Height))
+		binary.LittleEndian.PutUint64(v2[:8], uint64(ctx.Height)+1)
 		s.Write(k, v2)
 	}
+}
+
+func explorerBlockCallback(s *storage.Slice, b *block.Block, ctx *block.ExecutionContext) {
+	k := storage.KeyType{0xf1}
+	copy(k[1:1+block.HashLen], b.Header.Hash[:])
+	k[1+block.HashLen] = 1
+	v2 := storage.DataType{}
+	binary.LittleEndian.PutUint64(v2[:8], uint64(ctx.Height)+1)
+	s.Write(k, v2)
 }
 
 func ExplorerExecutionCallback() *block.ExecutionCallback {
 	return &block.ExecutionCallback{
 		Transfer: explorerTransferCallback,
+		Block:    explorerBlockCallback,
 	}
 }
 
@@ -118,7 +129,10 @@ func (cn *ChainNode) ExplorerGetTransaction(txh block.HashType) (*block.Transact
 	v := s.Read(k)
 	hc := cn.se.HighestChain
 	cn.seMut.Unlock()
-	height := int(binary.LittleEndian.Uint64(v[:8]))
+	height := int(binary.LittleEndian.Uint64(v[:8])) - 1
+	if height < 0 {
+		return nil, 0, errors.New("transaction not found")
+	}
 	mh := hc[len(hc)-1].S.Height()
 	hash := block.HashType{}
 	if height >= mh {
@@ -134,4 +148,26 @@ func (cn *ChainNode) ExplorerGetTransaction(txh block.HashType) (*block.Transact
 		}
 	}
 	return nil, 0, errors.New("transaction not found")
+}
+
+func (cn *ChainNode) ExplorerGetBlockByHash(hash block.HashType) (*block.Block, *consensus.ConsensusState, error) {
+	cn.seMut.Lock()
+	s := cn.se.HighestSlice
+	k := storage.KeyType{0xf1}
+	copy(k[1:1+block.HashLen], hash[:])
+	k[1+block.HashLen] = 1
+	v := s.Read(k)
+	cn.seMut.Unlock()
+	height := int(binary.LittleEndian.Uint64(v[:8])) - 1
+	if height < 0 {
+		return nil, nil, errors.New("block not found")
+	}
+	b, cs, err := cn.GetBlock(height)
+	if err != nil {
+		return nil, nil, err
+	}
+	if b.Header.Hash != hash {
+		return nil, nil, errors.New("block reorged")
+	}
+	return b, cs, err
 }

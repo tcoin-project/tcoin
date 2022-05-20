@@ -32,6 +32,7 @@ func NewServer(c *core.ChainNode) *Server {
 	s.r.GET("/get_block/:blockid", s.getBlock)
 	s.r.GET("/explorer/get_account_transactions/:addr/:page", s.explorerGetAccountTransactions)
 	s.r.GET("/explorer/get_transaction/:txh", s.explorerGetTransaction)
+	s.r.GET("/explorer/get_block_by_hash/:hash", s.explorerGetBlockByHash)
 	return s
 }
 
@@ -209,6 +210,39 @@ func (s *Server) explorerGetTransaction(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"status": true, "tx": buf.Bytes(), "height": height})
+}
+
+func (s *Server) explorerGetBlockByHash(c *gin.Context) {
+	hashStr := c.Param("hash")
+	hasht, err := hex.DecodeString(hashStr)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	if len(hasht) != block.HashLen {
+		c.JSON(200, gin.H{"status": false, "msg": "hash length invalid"})
+		return
+	}
+	var hash block.HashType
+	copy(hash[:], hasht)
+	b, cs, err := s.c.ExplorerGetBlockByHash(hash)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	var buf bytes.Buffer
+	err = block.EncodeBlock(&buf, b)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	var buf2 bytes.Buffer
+	err = consensus.EncodeConsensus(&buf2, cs)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"status": true, "block": buf.Bytes(), "consensus": buf2.Bytes(), "height": cs.Height})
 }
 
 func (s *Server) Run(addr string) {
