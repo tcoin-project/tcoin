@@ -344,7 +344,7 @@ func (c *Client) tryConn(id int, host string) {
 	conn, err := d.Dial("tcp", host)
 	if err == nil {
 		c.peersMut.Lock()
-		if _, ok := c.peers[id]; !ok {
+		if p, ok := c.peers[id]; !ok || p == nil {
 			c.handleConn(id, conn)
 		}
 		c.peersMut.Unlock()
