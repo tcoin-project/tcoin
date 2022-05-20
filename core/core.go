@@ -434,20 +434,30 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 }
 
 func (cn *ChainNode) handleBlocks(p cnet.PacketBlocks) error {
+	any := false
 	for i, bt := range p.Body {
 		var bh block.BlockHeader
 		if p.IsFull(i) {
 			b := bt.(*block.Block)
-			cn.blockCache.Set(string(b.Header.Hash[:]), b, cache.DefaultExpiration)
+			_, ok := cn.blockCache.Get(string(b.Header.Hash[:]))
+			if !ok {
+				cn.blockCache.Set(string(b.Header.Hash[:]), b, cache.DefaultExpiration)
+			}
 			bh = b.Header
 		} else {
 			bh = bt.(block.BlockHeader)
 		}
 		// log.Printf("get block %d %x", p.MinId+i, bh.Hash[:])
-		cn.unresolvedBlocks.Set(string(bh.Hash[:]), bh, cache.DefaultExpiration)
-		cn.possibleNext.Set(string(bh.ParentHash[:]), bh.Hash, cache.DefaultExpiration)
+		_, ok := cn.unresolvedBlocks.Get(string(bh.Hash[:]))
+		if !ok {
+			cn.unresolvedBlocks.Set(string(bh.Hash[:]), bh, cache.DefaultExpiration)
+			cn.possibleNext.Set(string(bh.ParentHash[:]), bh.Hash, cache.DefaultExpiration)
+			any = true
+		}
 	}
-	cn.checkUnBlocks <- true
+	if any {
+		cn.checkUnBlocks <- true
+	}
 	return nil
 }
 
