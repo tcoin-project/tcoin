@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -26,6 +27,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	globalNonce := make([]byte, 8)
+	_, err = rand.Read(globalNonce)
+	if err != nil {
+		log.Fatal(err)
+	}
 	resChan := make(chan *block.Block, 100)
 	var curTask *block.Block
 	var curDifficulty block.HashType
@@ -42,6 +48,7 @@ func main() {
 				continue
 			}
 			bh := task.Header
+			copy(bh.ExtraData[24:], globalNonce)
 			bh.ExtraData[0] = byte(id)
 			epoch++
 			binary.LittleEndian.PutUint64(bh.ExtraData[1:9], uint64(epoch))
