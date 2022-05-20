@@ -30,6 +30,8 @@ func NewServer(c *core.ChainNode) *Server {
 	s.r.GET("/get_account_info/:addr", s.getAccountInfo)
 	s.r.POST("/submit_tx", s.submitTx)
 	s.r.GET("/get_block/:blockid", s.getBlock)
+	s.r.GET("/explorer/get_account_transactions/:addr/:page", s.explorerGetAccountTransactions)
+	s.r.GET("/explorer/get_transaction/:txh", s.explorerGetTransaction)
 	return s
 }
 
@@ -159,6 +161,54 @@ func (s *Server) getBlock(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"status": true, "block": buf.Bytes(), "consensus": buf2.Bytes(), "height": cs.Height})
+}
+
+func (s *Server) explorerGetAccountTransactions(c *gin.Context) {
+	raddr := c.Param("addr")
+	pageStr := c.Param("page")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	if page <= 0 || page > 10000000 {
+		c.JSON(200, gin.H{"status": false, "msg": "page too large"})
+		return
+	}
+	addr, err := address.ParseAddr(raddr)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	res, n := s.c.ExplorerGetAccountTransactions(addr, page*10-9, page*10)
+	c.JSON(200, gin.H{"status": true, "txs": res, "total": n})
+}
+
+func (s *Server) explorerGetTransaction(c *gin.Context) {
+	txhStr := c.Param("txh")
+	txht, err := hex.DecodeString(txhStr)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	if len(txht) != block.HashLen {
+		c.JSON(200, gin.H{"status": false, "msg": "hash length invalid"})
+		return
+	}
+	var txh block.HashType
+	copy(txh[:], txht)
+	tx, height, err := s.c.ExplorerGetTransaction(txh)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	var buf bytes.Buffer
+	err = block.EncodeTx(&buf, tx)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"status": true, "tx": buf.Bytes(), "height": height})
 }
 
 func (s *Server) Run(addr string) {

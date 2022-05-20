@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/mcfx/tcoin/core"
+	"github.com/mcfx/tcoin/core/block"
 	"github.com/mcfx/tcoin/utils/corerpc"
 )
 
@@ -14,6 +15,7 @@ func main() {
 	cfn := flag.String("config", "", "config file")
 	gcfn := flag.String("globalConfig", "", "global config file")
 	rpcAddr := flag.String("rpc", "", "rpc listen addr")
+	explorer := flag.Bool("explorer", false, "enable explorer (requires re-sync)")
 	flag.Parse()
 	if *cfn == "" {
 		log.Fatal("no config file provided")
@@ -31,7 +33,11 @@ func main() {
 	}
 	json.Unmarshal(gcf, &gc)
 
-	n, err := core.NewChainNode(c, gc, nil)
+	var ec *block.ExecutionCallback
+	if *explorer {
+		ec = core.ExplorerExecutionCallback()
+	}
+	n, err := core.NewChainNode(c, gc, ec)
 	if err != nil {
 		log.Fatalf("failed to set up node: %v", err)
 	}

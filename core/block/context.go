@@ -2,6 +2,12 @@ package block
 
 import "github.com/mcfx/tcoin/storage"
 
+type ExecutionCallback struct {
+	Transfer func(s *storage.Slice, from AddressType, to AddressType, value uint64, tx *Transaction, ctx *ExecutionContext)
+}
+
 type ExecutionContext struct {
-	Transfer func(s *storage.Slice, from AddressType, to AddressType, value uint64)
+	Height   int
+	Time     uint64
+	Callback *ExecutionCallback
 }

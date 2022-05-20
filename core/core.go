@@ -35,13 +35,13 @@ type ChainNode struct {
 	broadcastBlocks     chan bool
 	config              ChainNodeConfig
 	gConfig             ChainGlobalConfig
-	ecxt                *block.ExecutionContext
+	execCallback        *block.ExecutionCallback
 	stop                chan bool
 	stopped             chan bool
 	seMut               sync.Mutex
 }
 
-func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig, ecxt *block.ExecutionContext) (*ChainNode, error) {
+func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig, execCallback *block.ExecutionCallback) (*ChainNode, error) {
 	if gConfig.GenesisBlock.Header.ComputeHash() != gConfig.GenesisBlock.Header.Hash {
 		return nil, errors.New("failed to init node: header hash mismatch")
 	}
@@ -49,7 +49,11 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig, ecxt *block
 		return nil, errors.New("failed to init node: header hash mismatch")
 	}
 	sl := storage.EmptySlice()
-	err := block.ExecuteBlock(gConfig.GenesisBlock, gConfig.GenesisBlockReward, sl, ecxt)
+	err := block.ExecuteBlock(gConfig.GenesisBlock, gConfig.GenesisBlockReward, sl, &block.ExecutionContext{
+		Height:   0,
+		Time:     gConfig.GenesisBlock.Time,
+		Callback: execCallback,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to init node: %v", err)
 	}
@@ -101,7 +105,7 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig, ecxt *block
 		broadcastBlocks:     make(chan bool, 10),
 		config:              config,
 		gConfig:             gConfig,
-		ecxt:                ecxt,
+		execCallback:        execCallback,
 		stop:                make(chan bool, 50),
 		stopped:             make(chan bool, 10),
 	}
@@ -391,7 +395,11 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			sl, ok := cn.se.GetSlice(storage.SliceKeyType(bh.ParentHash))
 			if ok {
 				sln := storage.ForkSlice(sl)
-				err := block.ExecuteBlock(b, cn.gConfig.BlockReward, sln, cn.ecxt)
+				err := block.ExecuteBlock(b, cn.gConfig.BlockReward, sln, &block.ExecutionContext{
+					Height:   cs.Height,
+					Time:     b.Time,
+					Callback: cn.execCallback,
+				})
 				if err == nil {
 					sln.Freeze()
 					cn.se.AddFreezedSlice(sln, storage.SliceKeyType(k), storage.SliceKeyType(bh.ParentHash), buf.Bytes())
@@ -579,7 +587,11 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 	for _, v := range txPool {
 		tx := v.Object.(*block.Transaction)
 		sl2 := storage.ForkSlice(sl)
-		err := block.ExecuteTx(tx, sl2, cn.ecxt)
+		err := block.ExecuteTx(tx, sl2, &block.ExecutionContext{
+			Height:   cn.se.HighestSlice.Height() + 1,
+			Time:     b.Time,
+			Callback: cn.execCallback,
+		})
 		if err == nil {
 			sl2.Merge()
 			b.Txs = append(b.Txs, tx)

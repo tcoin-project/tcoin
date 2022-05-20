@@ -143,10 +143,10 @@ func EncodeBlock(w utils.Writer, b *Block) error {
 	return nil
 }
 
-func ExecuteBlock(b *Block, reward uint64, s *storage.Slice, cxt *ExecutionContext) error {
+func ExecuteBlock(b *Block, reward uint64, s *storage.Slice, ctx *ExecutionContext) error {
 	var totalFee uint64 = 0
 	for _, tx := range b.Txs {
-		err := ExecuteTx(tx, s, cxt)
+		err := ExecuteTx(tx, s, ctx)
 		if err != nil {
 			return err
 		}
@@ -155,8 +155,8 @@ func ExecuteBlock(b *Block, reward uint64, s *storage.Slice, cxt *ExecutionConte
 	info := GetAccountInfo(s, b.Miner)
 	info.Balance += totalFee + reward
 	SetAccountInfo(s, b.Miner, info)
-	if cxt != nil {
-		cxt.Transfer(s, AddressType{}, b.Miner, totalFee+reward)
+	if ctx.Callback != nil {
+		ctx.Callback.Transfer(s, AddressType{}, b.Miner, totalFee+reward, nil, ctx)
 	}
 	return nil
 }
