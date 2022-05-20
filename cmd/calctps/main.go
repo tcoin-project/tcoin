@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/mcfx/tcoin/core/block"
 )
@@ -12,8 +13,7 @@ import (
 const rpcUrl = "http://127.0.0.1:60157/"
 
 func getBlock(id int) *block.Block {
-	data, _ := json.Marshal(map[string]int{"blockid": id})
-	resp, err := http.Post(rpcUrl+"get_block", "application/json", bytes.NewBuffer(data))
+	resp, err := http.Get(rpcUrl + "get_block/" + strconv.Itoa(id))
 	if err != nil {
 		panic(err)
 	}
