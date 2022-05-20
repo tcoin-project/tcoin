@@ -230,6 +230,7 @@ func (c *Client) maintainSendPeers() {
 		}
 		for _, k := range rk {
 			delete(c.peerInfo, k)
+			go c.DiscardPeer(connStrId(k), time.Duration(0))
 		}
 		c.peersMut.Unlock()
 		t := make([]string, len(res))
@@ -342,13 +343,15 @@ func (c *Client) tryConn(id int, host string) {
 		LocalAddr: la,
 	}
 	conn, err := d.Dial("tcp", host)
+	c.peersMut.Lock()
+	defer c.peersMut.Unlock()
 	if err == nil {
-		c.peersMut.Lock()
 		if p, ok := c.peers[id]; !ok || p == nil {
 			c.handleConn(id, conn)
+			return
 		}
-		c.peersMut.Unlock()
 	}
+	c.DiscardPeer(id, time.Duration(0))
 }
 
 func (c *Client) maintainPeers() {
@@ -388,7 +391,7 @@ func (c *Client) maintainConns() {
 		q := []int{}
 		c.peersMut.Lock()
 		for id, p := range c.peers {
-			if p == nil || p.Stopped() {
+			if p != nil && p.Stopped() {
 				q = append(q, id)
 			}
 		}
