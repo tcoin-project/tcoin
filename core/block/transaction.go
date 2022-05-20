@@ -130,7 +130,7 @@ func (tx *Transaction) Sign(privKey PrivkeyType) {
 	copy(tx.SenderSig[:], ed25519.Sign(privKey[:], data))
 }
 
-func ExecuteTx(tx *Transaction, s *storage.Slice) error {
+func ExecuteTx(tx *Transaction, s *storage.Slice, cxt *ExecutionContext) error {
 	if tx.TxType != 1 {
 		return errors.New("wrong tx type")
 	}
@@ -157,5 +157,8 @@ func ExecuteTx(tx *Transaction, s *storage.Slice) error {
 	receiverAccount := GetAccountInfo(s, tx.Receiver)
 	receiverAccount.Balance += tx.Value
 	SetAccountInfo(s, tx.Receiver, receiverAccount)
+	if cxt != nil {
+		cxt.Transfer(s, senderAddr, tx.Receiver, tx.Value)
+	}
 	return nil
 }

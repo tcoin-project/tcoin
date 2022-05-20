@@ -58,11 +58,11 @@ func TestTransactionExecType1(t *testing.T) {
 		Data:         []byte{1, 2, 3},
 	}
 	tx.Sign(prik1)
-	err := ExecuteTx(tx, s)
+	err := ExecuteTx(tx, s, nil)
 	if err != nil {
 		t.Fatal("failed to execute tx 1")
 	}
-	err = ExecuteTx(tx, s)
+	err = ExecuteTx(tx, s, nil)
 	if err == nil || err.Error() != "nonce mismatch" {
 		t.Fatalf("expect fail, but returned %v", err)
 	}
@@ -77,7 +77,7 @@ func TestTransactionExecType1(t *testing.T) {
 		Data:         []byte{1, 2, 3},
 	}
 	tx.Sign(prik2)
-	err = ExecuteTx(tx, s)
+	err = ExecuteTx(tx, s, nil)
 	if err != nil {
 		t.Fatal("failed to execute tx 2")
 	}

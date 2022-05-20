@@ -56,7 +56,7 @@ func startTestNode(t *testing.T, portBase, id int) *ChainNode {
 		GenesisBlockReward: bi * 100,
 		BlockReward:        bi,
 	}
-	cn, err := NewChainNode(config, gConfig)
+	cn, err := NewChainNode(config, gConfig, nil)
 	if err != nil {
 		t.Fatalf("failed to start node %d: %v", id, err)
 	}

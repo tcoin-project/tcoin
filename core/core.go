@@ -35,12 +35,13 @@ type ChainNode struct {
 	broadcastBlocks     chan bool
 	config              ChainNodeConfig
 	gConfig             ChainGlobalConfig
+	ecxt                *block.ExecutionContext
 	stop                chan bool
 	stopped             chan bool
 	seMut               sync.Mutex
 }
 
-func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig) (*ChainNode, error) {
+func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig, ecxt *block.ExecutionContext) (*ChainNode, error) {
 	if gConfig.GenesisBlock.Header.ComputeHash() != gConfig.GenesisBlock.Header.Hash {
 		return nil, errors.New("failed to init node: header hash mismatch")
 	}
@@ -48,7 +49,7 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig) (*ChainNode
 		return nil, errors.New("failed to init node: header hash mismatch")
 	}
 	sl := storage.EmptySlice()
-	err := block.ExecuteBlock(gConfig.GenesisBlock, gConfig.GenesisBlockReward, sl)
+	err := block.ExecuteBlock(gConfig.GenesisBlock, gConfig.GenesisBlockReward, sl, ecxt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init node: %v", err)
 	}
@@ -100,6 +101,7 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig) (*ChainNode
 		broadcastBlocks:     make(chan bool, 10),
 		config:              config,
 		gConfig:             gConfig,
+		ecxt:                ecxt,
 		stop:                make(chan bool, 50),
 		stopped:             make(chan bool, 10),
 	}
@@ -389,7 +391,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			sl, ok := cn.se.GetSlice(storage.SliceKeyType(bh.ParentHash))
 			if ok {
 				sln := storage.ForkSlice(sl)
-				err := block.ExecuteBlock(b, cn.gConfig.BlockReward, sln)
+				err := block.ExecuteBlock(b, cn.gConfig.BlockReward, sln, cn.ecxt)
 				if err == nil {
 					sln.Freeze()
 					cn.se.AddFreezedSlice(sln, storage.SliceKeyType(k), storage.SliceKeyType(bh.ParentHash), buf.Bytes())
@@ -577,7 +579,7 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 	for _, v := range txPool {
 		tx := v.Object.(*block.Transaction)
 		sl2 := storage.ForkSlice(sl)
-		err := block.ExecuteTx(tx, sl2)
+		err := block.ExecuteTx(tx, sl2, cn.ecxt)
 		if err == nil {
 			sl2.Merge()
 			b.Txs = append(b.Txs, tx)

@@ -31,7 +31,7 @@ func main() {
 	}
 	json.Unmarshal(gcf, &gc)
 
-	n, err := core.NewChainNode(c, gc)
+	n, err := core.NewChainNode(c, gc, nil)
 	if err != nil {
 		log.Fatalf("failed to set up node: %v", err)
 	}
