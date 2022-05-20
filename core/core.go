@@ -671,7 +671,7 @@ func (cn *ChainNode) GetBlock(height int) (*block.Block, *consensus.ConsensusSta
 	cn.seMut.Unlock()
 	mh := hc[len(hc)-1].S.Height()
 	hash := block.HashType{}
-	if height <= mh {
+	if height >= hc[0].S.Height() && height <= mh {
 		hash = block.HashType(hc[height-hc[0].S.Height()].Key)
 	}
 	b, err := cn.getBlock(height, hash)
