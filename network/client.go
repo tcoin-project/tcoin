@@ -304,7 +304,7 @@ func (c *Client) broadcast(pkt packet, count int) {
 				break
 			}
 		}
-		o = append(o, x)
+		o[i] = x
 		id := c.allPeers[x]
 		if peer, ok := c.peers[id]; ok && peer != nil {
 			bpeers = append(bpeers, peer)
