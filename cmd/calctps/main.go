@@ -28,6 +28,9 @@ func getBlock(id int) *block.Block {
 	if !res.Status {
 		panic(res.Msg)
 	}
+	if res.Height != id {
+		panic("height mismatch")
+	}
 	buf := bytes.NewBuffer(res.Block)
 	b, err := block.DecodeBlock(buf)
 	if err != nil {
@@ -38,7 +41,7 @@ func getBlock(id int) *block.Block {
 
 func main() {
 	s := []*block.Block{}
-	for i := 6000; i < 7723; i++ {
+	for i := 7000; i < 7900; i++ {
 		cur := getBlock(i)
 		s = append(s, cur)
 		if len(s) > 30 {
@@ -48,8 +51,10 @@ func main() {
 			for _, t := range s {
 				sumtx += len(t.Txs)
 			}
-			tps := float64(sumtx) / float64(s[len(s)-1].Time-o) / 1e9
-			fmt.Printf("tps %d: %.4f", i, tps)
+			tps := float64(sumtx) / float64(s[len(s)-1].Time-o) * 1e9
+			if tps > 0.1 {
+				fmt.Printf("tps %d: %.4f\n", i, tps)
+			}
 		}
 	}
 }
