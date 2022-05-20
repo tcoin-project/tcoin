@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/mcfx/tcoin/core/block"
 	"github.com/mcfx/tcoin/utils/address"
 )
 
-const rpcUrl = "https://uarpc.mcfx.us/"
+const rpcUrl = "http://127.0.0.1:60157/"
 
 func readWallet(addr string) block.AccountInfo {
 	data, _ := json.Marshal(map[string]string{"addr": addr})
@@ -48,8 +49,8 @@ func newAccount() account {
 
 func main() {
 	as := []account{}
-	n := 10
-	m := 10
+	n := 2000
+	m := 20
 	for i := 0; i < n; i++ {
 		as = append(as, newAccount())
 		log.Printf("account %d: %s", i, as[i].eaddr)
@@ -85,5 +86,6 @@ func main() {
 				panic(res["msg"].(string))
 			}
 		}
+		time.Sleep(time.Second * 10)
 	}
 }
