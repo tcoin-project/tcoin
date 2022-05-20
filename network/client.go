@@ -347,6 +347,7 @@ func (c *Client) tryConn(id int, host string) {
 	if err == nil {
 		if p, ok := c.peers[id]; !ok || p == nil {
 			c.handleConn(id, conn)
+			c.peersMut.Unlock()
 			return
 		}
 	}
