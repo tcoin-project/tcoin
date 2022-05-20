@@ -636,3 +636,23 @@ func (cn *ChainNode) SubmitTx(tx *block.Transaction) error {
 		Txs: []*block.Transaction{tx},
 	})
 }
+
+func (cn *ChainNode) GetBlock(height int) (*block.Block, *consensus.ConsensusState, error) {
+	cn.seMut.Lock()
+	hc := cn.se.HighestChain
+	cn.seMut.Unlock()
+	mh := hc[len(hc)-1].S.Height()
+	hash := block.HashType{}
+	if height >= mh {
+		hash = block.HashType(hc[height-hc[0].S.Height()].Key)
+	}
+	b, err := cn.getBlock(height, hash)
+	if err != nil {
+		return nil, nil, err
+	}
+	c, err := cn.getConsensusState(height, hash)
+	if err != nil {
+		return nil, nil, err
+	}
+	return b, c, err
+}

@@ -3,6 +3,7 @@ package corerpc
 import (
 	"bytes"
 	"encoding/hex"
+	"strconv"
 
 	"github.com/mcfx/tcoin/core"
 	"github.com/mcfx/tcoin/core/block"
@@ -26,7 +27,9 @@ func NewServer(c *core.ChainNode) *Server {
 	s.r.POST("/submit_block", s.submitBlock)
 	s.r.GET("/get_highest", s.getHighest)
 	s.r.POST("/get_account_info", s.getAccountInfo)
+	s.r.GET("/get_account_info/:addr", s.getAccountInfo)
 	s.r.POST("/submit_tx", s.submitTx)
+	s.r.GET("/get_block/:blockid", s.getBlock)
 	return s
 }
 
@@ -92,14 +95,17 @@ func (s *Server) getHighest(c *gin.Context) {
 		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
 		return
 	}
-	c.JSON(200, gin.H{"status": true, "block": buf.Bytes(), "consensus": buf2.Bytes()})
+	c.JSON(200, gin.H{"status": true, "block": buf.Bytes(), "consensus": buf2.Bytes(), "height": cs.Height})
 }
 
 func (s *Server) getAccountInfo(c *gin.Context) {
 	var body struct {
 		Addr string `json:"addr"`
 	}
-	c.BindJSON(&body)
+	body.Addr = c.Param("addr")
+	if body.Addr == "" {
+		c.BindJSON(&body)
+	}
 	addr, err := address.ParseAddr(body.Addr)
 	if err != nil {
 		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
@@ -126,6 +132,33 @@ func (s *Server) submitTx(c *gin.Context) {
 	} else {
 		c.JSON(200, gin.H{"status": true})
 	}
+}
+
+func (s *Server) getBlock(c *gin.Context) {
+	blockIdStr := c.Param("blockid")
+	blockId, err := strconv.Atoi(blockIdStr)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	b, cs, err := s.c.GetBlock(blockId)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	var buf bytes.Buffer
+	err = block.EncodeBlock(&buf, b)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	var buf2 bytes.Buffer
+	err = consensus.EncodeConsensus(&buf2, cs)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"status": true, "block": buf.Bytes(), "consensus": buf2.Bytes(), "height": cs.Height})
 }
 
 func (s *Server) Run(addr string) {
