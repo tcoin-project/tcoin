@@ -11,10 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/libp2p/go-reuseport"
+	"github.com/mcfx/tcoin/utils"
 )
 
 type ClientPacket struct {
@@ -36,7 +36,7 @@ type Client struct {
 	sendPeers   []byte
 	stop        chan bool
 	stopped     chan bool
-	peersMut    sync.Mutex
+	peersMut    utils.DebugMutex
 	networkId   uint16
 	nonce       []byte
 }
