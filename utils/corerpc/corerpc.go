@@ -181,7 +181,7 @@ func (s *Server) explorerGetAccountTransactions(c *gin.Context) {
 		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
 		return
 	}
-	res, n := s.c.ExplorerGetAccountTransactions(addr, page*10-9, page*10)
+	res, n := s.c.ExplorerGetAccountTransactions(addr, page*100-9, page*100)
 	c.JSON(200, gin.H{"status": true, "txs": res, "total": n})
 }
 
