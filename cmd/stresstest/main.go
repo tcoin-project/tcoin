@@ -14,24 +14,6 @@ import (
 
 const rpcUrl = "http://127.0.0.1:60157/"
 
-func readWallet(addr string) block.AccountInfo {
-	data, _ := json.Marshal(map[string]string{"addr": addr})
-	resp, err := http.Post(rpcUrl+"get_account_info", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		panic(err)
-	}
-	var res struct {
-		Status bool              `json:"status"`
-		Msg    string            `json:"msg"`
-		Data   block.AccountInfo `json:"data"`
-	}
-	json.NewDecoder(resp.Body).Decode(&res)
-	if !res.Status {
-		panic(res.Msg)
-	}
-	return res.Data
-}
-
 type account struct {
 	pubkey  block.PubkeyType
 	privkey block.PrivkeyType
