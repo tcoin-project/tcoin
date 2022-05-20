@@ -213,6 +213,7 @@ func (c *Client) maintainSendPeers() {
 	for {
 		ts := time.Now()
 		tk := ts.Add(time.Second * -600)
+		tk2 := ts.Add(time.Second * -7200)
 		res := make(map[string]bool)
 		c.peersMut.Lock()
 		for _, k := range c.peerCon {
@@ -222,7 +223,7 @@ func (c *Client) maintainSendPeers() {
 		for k, v := range c.peerInfo {
 			if v.After(tk) {
 				res[k] = true
-			} else {
+			} else if v.Before(tk2) {
 				rk = append(rk, k)
 			}
 		}
@@ -412,7 +413,7 @@ func (c *Client) AddPeers(peers []string) {
 		if len(ps) < 100 {
 			_, ok := c.peerInfo[ps]
 			if !ok {
-				c.peerInfo[ps] = time.Now().Add(time.Second * 300)
+				c.peerInfo[ps] = time.Now().Add(time.Second * -300)
 			}
 		}
 	}
