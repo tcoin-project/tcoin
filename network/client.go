@@ -11,10 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-reuseport"
-	"github.com/mcfx/tcoin/utils"
 )
 
 type ClientPacket struct {
@@ -36,7 +36,7 @@ type Client struct {
 	sendPeers   []byte
 	stop        chan bool
 	stopped     chan bool
-	peersMut    utils.DebugMutex
+	peersMut    sync.Mutex
 	networkId   uint16
 	nonce       []byte
 }
@@ -388,7 +388,7 @@ func (c *Client) maintainConns() {
 		q := []int{}
 		c.peersMut.Lock()
 		for id, p := range c.peers {
-			if p.Stopped() {
+			if p != nil && p.Stopped() {
 				q = append(q, id)
 			}
 		}
