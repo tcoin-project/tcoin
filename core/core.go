@@ -442,6 +442,10 @@ func (cn *ChainNode) handleBlocks(p cnet.PacketBlocks) error {
 			_, ok := cn.blockCache.Get(string(b.Header.Hash[:]))
 			if !ok {
 				cn.blockCache.Set(string(b.Header.Hash[:]), b, cache.DefaultExpiration)
+				for _, tx := range b.Txs {
+					hs := tx.Hash()
+					cn.txPool.Delete(string(hs[:]))
+				}
 			}
 			bh = b.Header
 		} else {
