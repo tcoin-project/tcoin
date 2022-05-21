@@ -41,19 +41,20 @@ func getBlock(id int) *block.Block {
 
 func main() {
 	s := []*block.Block{}
-	for i := 7000; i < 7900; i++ {
+	for i := 0; i < 14000; i++ {
 		cur := getBlock(i)
 		s = append(s, cur)
-		if len(s) > 30 {
+		if len(s) > 10 {
 			o := s[0].Time
 			s = s[1:]
 			sumtx := 0
 			for _, t := range s {
 				sumtx += len(t.Txs)
 			}
-			tps := float64(sumtx) / float64(s[len(s)-1].Time-o) * 1e9
-			if tps > 0.1 {
-				fmt.Printf("tps %d: %.4f\n", i, tps)
+			tm := float64(s[len(s)-1].Time-o) / 1e9
+			tps := float64(sumtx) / tm
+			if tps > 50 {
+				fmt.Printf("tps %d: %.4f in %.2fs\n", i, tps, tm)
 			}
 		}
 	}
