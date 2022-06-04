@@ -1,0 +1,7 @@
+{
+    "storage_path": "/your/desired/db/path",
+    "storage_finalize_depth": 30,
+    "storage_dump_disk_ratio": 0.01,
+    "listen_port": 36879,
+    "max_connections": 20
+}
