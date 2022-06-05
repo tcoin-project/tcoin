@@ -15,26 +15,16 @@ func assertEq(t *testing.T, a, b interface{}, msg string, args ...interface{}) {
 }
 
 func TestInstGen(t *testing.T) {
-	// sub x5, x8, x30
-	assertEq(t, genRType(0b0110011, 5, 0b000, 8, 30, 0b0100000), uint32(1105461939), "R-Type error")
-	// xor x4, x27, x9
-	assertEq(t, genRType(0b0110011, 4, 0b100, 27, 9, 0b0000000), uint32(10338867), "R-Type error")
-	// lbu x14, -375(x11)
-	assertEq(t, genIType(0b0000011, 14, 0b100, 11, -375), uint32(3902129923), "I-Type error")
-	// sltiu x23, x15, 897
-	assertEq(t, genIType(0b0010011, 23, 0b011, 15, 897), uint32(941079443), "I-Type error")
-	// sw x17, 3(x28)
-	assertEq(t, genSType(0b0100011, 0b010, 28, 17, 3), uint32(18751907), "S-Type error")
-	// bge x7, x31, _start-4000
-	assertEq(t, genBType(0b1100011, 0b101, 7, 31, -4000), uint32(2280902755), "B-Type error")
-	// bne x5, x0, _start+2482
-	assertEq(t, genBType(0b1100011, 0b001, 5, 0, 2482), uint32(436378083), "B-Type error")
-	// lui x19, 675249 (-1529147392)
-	assertEq(t, genUType(0b0110111, 19, -1529147392), uint32(2765822391), "U-Type error")
-	// jal x6, _start+804806
-	assertEq(t, genJType(0b1101111, 6, 804806), uint32(2087469935), "J-Type error")
-	// jal x17, _start-576118
-	assertEq(t, genJType(0b1101111, 17, -576118), uint32(3634837743), "J-Type error")
+	assertEq(t, genRType(0b0110011, 5, 0b000, 8, 30, 0b0100000), asmToInt("sub x5, x8, x30"), "R-Type error")
+	assertEq(t, genRType(0b0110011, 4, 0b100, 27, 9, 0b0000000), asmToInt("xor x4, x27, x9"), "R-Type error")
+	assertEq(t, genIType(0b0000011, 14, 0b100, 11, -375), asmToInt("lbu x14, -375(x11)"), "I-Type error")
+	assertEq(t, genIType(0b0010011, 23, 0b011, 15, 897), asmToInt("sltiu x23, x15, 897"), "I-Type error")
+	assertEq(t, genSType(0b0100011, 0b010, 28, 17, 3), asmToInt("sw x17, 3(x28)"), "S-Type error")
+	assertEq(t, genBType(0b1100011, 0b101, 7, 31, -4000), asmToInt("bge x7, x31, _start-4000"), "B-Type error")
+	assertEq(t, genBType(0b1100011, 0b001, 5, 0, 2482), asmToInt("bne x5, x0, _start+2482"), "B-Type error")
+	assertEq(t, genUType(0b0110111, 19, -1529147392), asmToInt("lui x19, 675249"), "U-Type error")
+	assertEq(t, genJType(0b1101111, 6, 804806), asmToInt("jal x6, _start+804806"), "J-Type error")
+	assertEq(t, genJType(0b1101111, 17, -576118), asmToInt("jal x17, _start-576118"), "J-Type error")
 }
 
 func TestImmExtract(t *testing.T) {

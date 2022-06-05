@@ -73,15 +73,22 @@ func execStep(cpu *CPU, env *CPUExecEnv, insn uint32) (uint64, error) {
 			nextPc = cpu.Pc + SignExtend32(ImmBType(insn))
 		}
 	case 0b00000, 0b01000: // LOAD/STORE
-		addr := rs1v + SignExtend32(ImmIType(insn))
-		if (addr&(1<<(funct3&3)) - 1) != 0 {
+		var immTmp uint32
+		if opcode == 0b00000 {
+			immTmp = ImmIType(insn)
+		} else {
+			immTmp = ImmSType(insn)
+		}
+		addr := rs1v + SignExtend32(immTmp)
+		if (addr & ((1 << (funct3 & 3)) - 1)) != 0 {
 			return nextPc, ErrUnalignedMemoryAccess
 		}
 		if env.Gas < GasMemoryOp {
 			return nextPc, ErrInsufficientGas
 		}
 		env.Gas -= GasMemoryOp
-		val, err := env.MemRead(addr & (^uint64(7)))
+		pos, err := env.MemRead(addr & (^uint64(7)))
+		val := *pos
 		if err != nil {
 			return nextPc, err
 		}
@@ -118,7 +125,7 @@ func execStep(cpu *CPU, env *CPUExecEnv, insn uint32) (uint64, error) {
 			default:
 				return nextPc, ErrIllegalInstruction
 			}
-			env.MemWrite(addr, val)
+			*pos = val
 		}
 	case 0b00100: // OP-IMM
 		switch funct3 {
@@ -307,15 +314,6 @@ func execStep(cpu *CPU, env *CPUExecEnv, insn uint32) (uint64, error) {
 			default:
 				return nextPc, ErrIllegalInstruction
 			}
-		}
-	case 0b11100: // SYSTEM
-		if (insn >> 7) != 0 {
-			return nextPc, ErrIllegalInstruction
-		}
-		// ECALL
-		err := env.Ecall()
-		if err != nil {
-			return nextPc, err
 		}
 	default:
 		return nextPc, ErrIllegalInstruction

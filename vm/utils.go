@@ -1,6 +1,11 @@
 package vm
 
-import "fmt"
+import (
+	"encoding/binary"
+	"fmt"
+	"io/ioutil"
+	"os/exec"
+)
 
 func SignExtend32(x uint32) uint64 {
 	return uint64(int64(int32(x)))
@@ -144,4 +149,35 @@ func genJType(opcode, rd uint32, imm int32) uint32 {
 	imm_20 := immt >> 20 & 1
 	immn := imm_20<<19 | imm_10_1<<9 | imm_11<<8 | imm_19_12
 	return opcode | rd<<7 | immn<<12
+}
+
+func asmToBytes(asm string) []byte {
+	fullAsm := ".section .text\n.globl _start\n_start:\n" + asm + "\n"
+	err := ioutil.WriteFile("/tmp/1.S", []byte(fullAsm), 0o755)
+	if err != nil {
+		panic(err)
+	}
+	cmd := exec.Command("riscv64-elf-gcc", "/tmp/1.S", "-o", "/tmp/1", "-nostdlib", "-nodefaultlibs", "-march=rv64im", "-mabi=lp64")
+	err = cmd.Run()
+	if err != nil {
+		panic(err)
+	}
+	cmd = exec.Command("riscv64-elf-objcopy", "-O", "binary", "--only-section=.text", "/tmp/1", "/tmp/2")
+	err = cmd.Run()
+	if err != nil {
+		panic(err)
+	}
+	res, err := ioutil.ReadFile("/tmp/2")
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
+
+func asmToInt(asm string) uint32 {
+	b := asmToBytes(asm)
+	if len(b) != 4 {
+		panic("asm length is not 4")
+	}
+	return binary.LittleEndian.Uint32(b)
 }
