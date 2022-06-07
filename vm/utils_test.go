@@ -14,6 +14,26 @@ func assertEq(t *testing.T, a, b interface{}, msg string, args ...interface{}) {
 	}
 }
 
+func assertNe(t *testing.T, a, b interface{}, msg string, args ...interface{}) {
+	if a == nil && b == nil {
+		args = append(args, a)
+		args = append(args, b)
+		t.Fatalf(msg+": %v == %v", args...)
+	} else if a != nil && b != nil {
+		aType := reflect.TypeOf(a).Kind()
+		bType := reflect.TypeOf(b).Kind()
+		if aType != bType {
+			args = append(args, aType)
+			args = append(args, bType)
+			t.Fatalf(msg+": type mismatch (%v != %v)", args...)
+		} else if reflect.DeepEqual(a, b) {
+			args = append(args, a)
+			args = append(args, b)
+			t.Fatalf(msg+": %v == %v", args...)
+		}
+	}
+}
+
 func TestInstGen(t *testing.T) {
 	assertEq(t, genRType(0b0110011, 5, 0b000, 8, 30, 0b0100000), asmToInt("sub x5, x8, x30"), "R-Type error")
 	assertEq(t, genRType(0b0110011, 4, 0b100, 27, 9, 0b0000000), asmToInt("xor x4, x27, x9"), "R-Type error")
