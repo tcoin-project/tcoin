@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"encoding/binary"
 	"io/ioutil"
 	"os/exec"
 	"testing"
@@ -128,4 +129,23 @@ func TestLoadELF(t *testing.T) {
 	_, err = pm.LoadELF(elf, 0, env)
 	assertNe(t, err, nil, "expected error")
 	pm.Recycle()
+}
+
+func TestLoad(t *testing.T) {
+	s := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	pm := ProgramMemory{}
+	pm.load(0x10000000, 1, append(s, s[:3]...))
+	assertEq(t, pm.blocks[0][0][0], binary.LittleEndian.Uint64(s), "value mismatch")
+	assertEq(t, pm.blocks[0][0][1], uint64(0x30201), "value mismatch")
+}
+
+func TestLoadRawCode(t *testing.T) {
+	env := &ExecEnv{
+		Gas: 100000000000000000,
+	}
+	s := []byte{1, 2, 3, 4, 5, 6, 7, 8}
+	pm := ProgramMemory{}
+	err := pm.LoadRawCode(s, 0x10000000, env)
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, pm.blocks[0][0][0], binary.LittleEndian.Uint64(s), "value mismatch")
 }

@@ -3,6 +3,7 @@ package vm
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
 )
@@ -109,8 +110,70 @@ type segment struct {
 	numPages uint32
 }
 
+func (pm *ProgramMemory) load(addr, numPages uint32, s []byte) {
+	length := len(s)
+	bid := addr >> 28
+	for i := 0; i < int(numPages); i++ {
+		pm.Access(addr+uint32(i*PageSize), true, OpRead)
+	}
+	buf := bytes.NewBuffer(s)
+	for i := 0; i < int(numPages); i++ {
+		pAddr := addr + uint32(i)*PageSize
+		pageId := (pAddr << 4) >> 16
+		start := i * PageSize
+		end := (i + 1) * PageSize
+		pm.blocks[bid-1].assure(pageId)
+		if end <= length {
+			binary.Read(buf, binary.LittleEndian, pm.blocks[bid-1][pageId])
+		} else if start < length {
+			rem := length % PageSize
+			rem8 := rem >> 3
+			binary.Read(buf, binary.LittleEndian, pm.blocks[bid-1][pageId][:rem8])
+			if (rem & 7) != 0 {
+				buf2 := make([]byte, 8)
+				copy(buf2[:rem&7], buf.Bytes())
+				pm.blocks[bid-1][pageId][rem8] = binary.LittleEndian.Uint64(buf2)
+			}
+		}
+	}
+}
+
+func (pm *ProgramMemory) LoadRawCode(code []byte, loadOffset uint32, env *ExecEnv) error {
+	if len(code) >= (1<<32) || len(code)+int(loadOffset) >= (1<<32) {
+		return errors.New("code too long")
+	}
+	if loadOffset%PageSize != 0 {
+		return fmt.Errorf("load offset %d not aligned", loadOffset)
+	}
+	bid := loadOffset >> 28
+	if bid != 1 {
+		return fmt.Errorf("can only load to block 1")
+	}
+	numPages := (len(code) + PageSize - 1) / PageSize
+	for i := 0; i < int(numPages); i++ {
+		pAddr := loadOffset + uint32(i)*PageSize
+		pageId := (pAddr << 4) >> 16
+		if pageId >= MaxPagesPerBlock {
+			return fmt.Errorf("page id %d too large", pageId)
+		}
+		var page *Page = pm.blocks[bid-1][pageId]
+		if page != nil {
+			return fmt.Errorf("page %d already allocated", pageId)
+		}
+	}
+	if env.Gas < uint64(numPages)*GasMemoryPage {
+		return ErrInsufficientGas
+	}
+	env.Gas -= uint64(numPages) * GasMemoryPage
+	pm.load(loadOffset, uint32(numPages), code)
+	return nil
+}
+
 func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (uint32, error) {
 	const SizeLimit = 1 << 30
+	if loadOffset%PageSize != 0 {
+		return 0, fmt.Errorf("load offset %d not aligned", loadOffset)
+	}
 	if len(elf) < 0x40 {
 		return 0, fmt.Errorf("invalid ELF: size too small (%d < 0x40)", len(elf))
 	}
@@ -121,7 +184,7 @@ func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (u
 		return 0, fmt.Errorf("invalid ELF: arch mismatch")
 	}
 	entryPoint := binary.LittleEndian.Uint64(elf[0x18:0x20])
-	if entryPoint+uint64(loadOffset) >= (1 << 32) {
+	if entryPoint >= (1<<32) || entryPoint+uint64(loadOffset) >= (1<<32) {
 		return 0, fmt.Errorf("invalid ELF: entry point too large: %d", entryPoint)
 	}
 	programHeaderOffset := int(binary.LittleEndian.Uint64(elf[0x20:0x28]))
@@ -138,6 +201,7 @@ func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (u
 		return 0, fmt.Errorf("invalid ELF: program header entry size mismatch (%d != 56)", programHeaderEntrySize)
 	}
 	segments := []segment{}
+	totPages := 0
 	for i := 0; i < numProgramHeaderEntries; i++ {
 		entry := elf[programHeaderOffset+programHeaderEntrySize*i : programHeaderOffset+programHeaderEntrySize*(i+1)]
 		p_type := binary.LittleEndian.Uint32(entry[:4])
@@ -209,37 +273,14 @@ func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (u
 			addr:     addr,
 			numPages: uint32(numPages),
 		})
+		totPages += int(numPages)
 	}
+	if env.Gas < uint64(totPages)*GasMemoryPage {
+		return 0, ErrInsufficientGas
+	}
+	env.Gas -= uint64(totPages) * GasMemoryPage
 	for _, segment := range segments {
-		bid := segment.addr >> 28
-		for i := 0; i < int(segment.numPages); i++ {
-			pm.Access(segment.addr+uint32(i*PageSize), true, OpRead)
-		}
-		buf := bytes.NewBuffer(elf[segment.offset : segment.offset+segment.length])
-		for i := 0; i < int(segment.numPages); i++ {
-			pAddr := segment.addr + uint32(i)*PageSize
-			pageId := (pAddr << 4) >> 16
-			start := i * PageSize
-			end := (i + 1) * PageSize
-			if pm.blocks[bid-1].assure(pageId) {
-				if env.Gas < GasMemoryPage {
-					return 0, ErrInsufficientGas
-				}
-				env.Gas -= GasMemoryPage
-			}
-			if end <= int(segment.length) {
-				binary.Read(buf, binary.LittleEndian, pm.blocks[bid-1][pageId])
-			} else if start < int(segment.length) {
-				rem := segment.length % PageSize
-				rem8 := rem >> 3
-				binary.Read(buf, binary.LittleEndian, pm.blocks[bid-1][pageId][:rem8])
-				if (rem & 7) != 0 {
-					buf2 := make([]byte, 8)
-					copy(buf2[:rem&7], buf.Bytes())
-					pm.blocks[bid-1][pageId][rem8] = binary.LittleEndian.Uint64(buf2)
-				}
-			}
-		}
+		pm.load(segment.addr, segment.numPages, elf[segment.offset:segment.offset+segment.length])
 	}
 	return uint32(entryPoint) + loadOffset, nil
 }
