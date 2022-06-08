@@ -40,7 +40,7 @@ func (ps *Pages) assure(id uint32) bool {
 		p := pagePool.Get().(*Page)
 		ps[id] = p
 		p[0] = 0
-		for i := 1; i < (PageSize >> 4); i <<= 1 {
+		for i := 1; i <= (PageSize >> 4); i <<= 1 {
 			copy(p[i:i+i], p[:i])
 		}
 		return true
@@ -49,10 +49,10 @@ func (ps *Pages) assure(id uint32) bool {
 }
 
 func (ps *Pages) recycle() {
-	for _, x := range ps {
-		if x != nil {
-			pagePool.Put(x)
-			x = nil
+	for i := 0; i < MaxPagesPerBlock; i++ {
+		if ps[i] != nil {
+			pagePool.Put(ps[i])
+			ps[i] = nil
 		}
 	}
 }

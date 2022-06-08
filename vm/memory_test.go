@@ -19,6 +19,7 @@ func TestMemoryAccess(t *testing.T) {
 	x, new = m.Access(1, 0x40000000, OpRead)
 	assertUint64Ptr(t, x, true, "shouldn't be able to read")
 	assertEq(t, new, false, "shouldn't allocate")
+	m.Recycle()
 }
 
 func TestReadWriteBytes(t *testing.T) {
@@ -32,6 +33,11 @@ func TestReadWriteBytes(t *testing.T) {
 	refMem := make([]byte, n)
 	env := &ExecEnv{
 		Gas: 1000000000000000,
+	}
+	for i := 0; i < n; i += 8 {
+		x, new := m.Access(0, uint64(base+i), OpRead)
+		assertEq(t, new, i%PageSize == 0, "allocation mismatch")
+		assertEq(t, *x, uint64(0), "not inited")
 	}
 	for i := 0; i < 1000; i++ {
 		l := rand.Intn(n)
@@ -48,4 +54,5 @@ func TestReadWriteBytes(t *testing.T) {
 			assertEq(t, m.ReadBytes(0, uint64(base+l), uint64(r-l), env), refMem[l:r], "read mismatch")
 		}
 	}
+	m.Recycle()
 }
