@@ -26,6 +26,10 @@ type ProgramMemory struct {
 	blocks [NumBlocks]Pages
 }
 
+var pmPool = &sync.Pool{New: func() interface{} {
+	return &ProgramMemory{}
+}}
+
 func (ps *Pages) check(id uint32) bool {
 	return ps[id] != nil
 }
@@ -105,7 +109,7 @@ type segment struct {
 	numPages uint32
 }
 
-func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32) (uint32, error) {
+func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (uint32, error) {
 	const SizeLimit = 1 << 30
 	if len(elf) < 0x40 {
 		return 0, fmt.Errorf("invalid ELF: size too small (%d < 0x40)", len(elf))
@@ -217,7 +221,12 @@ func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32) (uint32, error) 
 			pageId := (pAddr << 4) >> 16
 			start := i * PageSize
 			end := (i + 1) * PageSize
-			pm.blocks[bid-1].assure(pageId)
+			if pm.blocks[bid-1].assure(pageId) {
+				if env.Gas < GasMemoryPage {
+					return 0, ErrInsufficientGas
+				}
+				env.Gas -= GasMemoryPage
+			}
 			if end <= int(segment.length) {
 				binary.Read(buf, binary.LittleEndian, pm.blocks[bid-1][pageId])
 			} else if start < int(segment.length) {

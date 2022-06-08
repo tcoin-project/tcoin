@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-func buildELF(source string) []byte {
-	err := ioutil.WriteFile("/tmp/1a.c", []byte(source), 0o755)
+func buildELFWithFilename(source, filename, binname string) []byte {
+	err := ioutil.WriteFile(filename, []byte(source), 0o755)
 	if err != nil {
 		panic(err)
 	}
-	cmd := exec.Command("riscv64-elf-gcc", "/tmp/1a.c", "-o", "/tmp/1a",
+	cmd := exec.Command("riscv64-elf-gcc", filename, "-o", binname,
 		"-nostdlib", "-nodefaultlibs", "-fno-builtin",
 		"-march=rv64im", "-mabi=lp64",
 		"-Wl,--gc-sections", "-fPIE", "-s",
@@ -23,11 +23,15 @@ func buildELF(source string) []byte {
 	if err != nil {
 		panic(err)
 	}
-	res, err := ioutil.ReadFile("/tmp/1a")
+	res, err := ioutil.ReadFile(binname)
 	if err != nil {
 		panic(err)
 	}
 	return res
+}
+
+func buildELF(source string) []byte {
+	return buildELFWithFilename(source, "/tmp/1a.c", "/tmp/1a")
 }
 
 func assertUint64Ptr(t *testing.T, a *uint64, isNil bool, msg string, args ...interface{}) {
@@ -39,9 +43,12 @@ func assertUint64Ptr(t *testing.T, a *uint64, isNil bool, msg string, args ...in
 }
 
 func TestProgramMemoryPrivileges(t *testing.T) {
+	env := &ExecEnv{
+		Gas: 100000000000000000,
+	}
 	pm := ProgramMemory{}
 	elf := buildELF("int _start() { return 0; }")
-	entry, err := pm.LoadELF(elf, 0)
+	entry, err := pm.LoadELF(elf, 0, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, entry, uint32(0x10000190), "entry mismatch")
 	ptr, new := pm.Access(0x10000000, true, OpRead)
@@ -84,17 +91,20 @@ func TestProgramMemoryPrivileges(t *testing.T) {
 }
 
 func TestLoadELF(t *testing.T) {
+	env := &ExecEnv{
+		Gas: 100000000000000000,
+	}
 	pm := ProgramMemory{}
 	elf := buildELF("int _start() { return 0; }")
-	entry, err := pm.LoadELF(elf, 0)
+	entry, err := pm.LoadELF(elf, 0, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, entry, uint32(0x10000190), "entry mismatch")
 	elf = buildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
 		"__attribute__((section(\".shared_data\"))) unsigned long long b[1] = {0x0114051419190810};" +
 		"int _start() { return a[0] ^ b[0]; }")
-	_, err = pm.LoadELF(elf, 0)
+	_, err = pm.LoadELF(elf, 0, env)
 	assertNe(t, err, nil, "error happened")
-	entry, err = pm.LoadELF(elf, 0x1000)
+	entry, err = pm.LoadELF(elf, 0x1000, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, entry, uint32(0x10001190), "entry mismatch")
 	ptr, new := pm.Access(0x20001000, true, OpRead)
@@ -106,12 +116,16 @@ func TestLoadELF(t *testing.T) {
 	assertEq(t, new, false, "shoule be allocated")
 	assertEq(t, *ptr, uint64(0x0114051419190810), "value mismatch")
 	for i := 0; i < 10; i++ {
-		entry, err = pm.LoadELF(elf, uint32(0x1000*(i+2)))
+		entry, err = pm.LoadELF(elf, uint32(0x1000*(i+2)), env)
 		assertEq(t, err, nil, "error happened")
 		assertEq(t, entry, uint32(0x10002190+0x1000*i), "entry mismatch")
 	}
 	elf = buildELF("__attribute__((section(\".private_data\"))) int _start() {}")
-	_, err = pm.LoadELF(elf, 0x30000)
+	_, err = pm.LoadELF(elf, 0x30000, env)
+	assertNe(t, err, nil, "expected error")
+	env.Gas = 0
+	elf = buildELF("int _start() { return 0; }")
+	_, err = pm.LoadELF(elf, 0, env)
 	assertNe(t, err, nil, "expected error")
 	pm.Recycle()
 }

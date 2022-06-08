@@ -3,6 +3,7 @@ package vm
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -102,8 +103,8 @@ func testBatchInsns(t *testing.T, regs [][]uint64, insns []string) {
 		}
 		cpu.Pc = uint64(0x100000 + initOffset + codeSize*T + codeOffset)
 		env := &CPUExecEnv{
-			Gas:     100,
-			MemRead: nil,
+			Gas:       100,
+			MemAccess: nil,
 		}
 		_, err := execStep(cpu, env, insn)
 		if err != nil {
@@ -313,7 +314,7 @@ func testLoadStore(t *testing.T, testCount, seed int) {
 	cpu.Reg[3] = memBase + 2048
 	env := &CPUExecEnv{
 		Gas: 1000000000000,
-		MemRead: func(u uint64) (*uint64, error) {
+		MemAccess: func(u uint64, _ int) (*uint64, error) {
 			if u < memBase || u >= memBase+4096 {
 				t.Fatalf("memory access out of range: %d", u)
 			}
@@ -458,8 +459,8 @@ func testBatchInsnsJump(t *testing.T, regs [][]uint64, insns []string) {
 		}
 		cpu.Pc = PlayEntry
 		env := &CPUExecEnv{
-			Gas:     100,
-			MemRead: nil,
+			Gas:       100,
+			MemAccess: nil,
 		}
 		nextPc, err := execStep(cpu, env, insn)
 		if err != nil {
@@ -530,8 +531,8 @@ func TestJAL(t *testing.T) {
 	cpu := &CPU{}
 	cpu.Pc = Pc
 	env := &CPUExecEnv{
-		Gas:     100,
-		MemRead: nil,
+		Gas:       100,
+		MemAccess: nil,
 	}
 	nextPc, err := execStep(cpu, env, insn)
 	if err != nil {
@@ -551,4 +552,37 @@ func TestJAL(t *testing.T) {
 	if nextPc != Pc*2 || cpu.Reg[5] != Pc+4 {
 		t.Fatalf("jalr error: %d %d %d %d", nextPc, Pc*2, cpu.Reg[5], Pc+4)
 	}
+}
+
+func TestCPUPrivileges(t *testing.T) {
+	insn := asmToInt("sd x1, 0(x2)")
+	cpu := &CPU{}
+	cpu.Reg[1] = 1
+	cpu.Reg[2] = 8
+	xerr := errors.New("test")
+	env := &CPUExecEnv{
+		Gas: 100,
+		MemAccess: func(u uint64, op int) (*uint64, error) {
+			if u != 8 || op != OpWrite {
+				t.Fatalf("memory access failed")
+			}
+			return nil, xerr
+		},
+	}
+	_, err := execStep(cpu, env, insn)
+	assertEq(t, err, xerr, "expected error")
+	insn = asmToInt("ld x1, 0(x2)")
+	cpu.Reg[1] = 1
+	cpu.Reg[2] = 16
+	env = &CPUExecEnv{
+		Gas: 100,
+		MemAccess: func(u uint64, op int) (*uint64, error) {
+			if u != 16 || op != OpRead {
+				t.Fatalf("memory access failed")
+			}
+			return nil, xerr
+		},
+	}
+	_, err = execStep(cpu, env, insn)
+	assertEq(t, err, xerr, "expected error")
 }

@@ -74,10 +74,13 @@ func execStep(cpu *CPU, env *CPUExecEnv, insn uint32) (uint64, error) {
 		}
 	case 0b00000, 0b01000: // LOAD/STORE
 		var immTmp uint32
+		var op int
 		if opcode == 0b00000 {
 			immTmp = ImmIType(insn)
+			op = OpRead
 		} else {
 			immTmp = ImmSType(insn)
+			op = OpWrite
 		}
 		addr := rs1v + SignExtend32(immTmp)
 		if (addr & ((1 << (funct3 & 3)) - 1)) != 0 {
@@ -87,11 +90,11 @@ func execStep(cpu *CPU, env *CPUExecEnv, insn uint32) (uint64, error) {
 			return nextPc, ErrInsufficientGas
 		}
 		env.Gas -= GasMemoryOp
-		pos, err := env.MemRead(addr & (^uint64(7)))
-		val := *pos
+		pos, err := env.MemAccess(addr&(^uint64(7)), op)
 		if err != nil {
 			return nextPc, err
 		}
+		val := *pos
 		offset := (addr & 7) << 3
 		if opcode == 0b00000 { // LOAD
 			switch funct3 {
@@ -320,4 +323,17 @@ func execStep(cpu *CPU, env *CPUExecEnv, insn uint32) (uint64, error) {
 	}
 	cpu.Pc = nextPc
 	return nextPc, nil
+}
+
+func (c *CPU) SetCall(target, ret uint64) {
+	c.Pc = target
+	c.Reg[1] = ret
+}
+
+func (c *CPU) GetArg(i int) uint64 {
+	return c.Reg[10+i]
+}
+
+func (c *CPU) SetArg(i int, val uint64) {
+	c.Reg[10+i] = val
 }
