@@ -52,7 +52,8 @@ func TestReadWriteBytes(t *testing.T) {
 			rnd.Read(refMem[l:r])
 			assertEq(t, m.WriteBytes(0, uint64(base+l), refMem[l:r], env), nil, "failed to write")
 		} else {
-			mem, err := m.ReadBytes(0, uint64(base+l), uint64(r-l), env)
+			mem := make([]byte, r-l)
+			err := m.ReadBytes(0, uint64(base+l), mem, env)
 			assertEq(t, err, nil, "read error")
 			assertEq(t, mem, refMem[l:r], "read mismatch")
 		}
@@ -68,10 +69,10 @@ func TestReadWriteBytesErrors(t *testing.T) {
 	env := &ExecEnv{
 		Gas: 1000000000,
 	}
-	_, err = m.ReadBytes(0, 0x114514, 100, env)
+	err = m.ReadBytes(0, 0x114514, make([]byte, 100), env)
 	assertEq(t, err, ErrSegFault, "expected error")
 	env.Gas = 100
-	_, err = m.ReadBytes(0, 0x20000000, 100000, env)
+	err = m.ReadBytes(0, 0x20000000, make([]byte, 100000), env)
 	assertEq(t, err, ErrInsufficientGas, "expected error")
 	env.Gas = 10000000000
 	err = m.WriteBytes(1, 0x40000000, make([]byte, 100), env)

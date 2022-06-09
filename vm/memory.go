@@ -42,7 +42,7 @@ func (m *Memory) Access(pcProg, ptr uint64, op int) (*uint64, bool) {
 }
 
 // todo: optimize consecutive memory access
-func (m *Memory) ReadBytes(pcProg, ptr, n uint64, env *ExecEnv) ([]byte, error) {
+func (m *Memory) ReadBytes(pcProg, ptr uint64, res []byte, env *ExecEnv) error {
 	chk := func(a *uint64, b bool) error {
 		if b {
 			if env.Gas < GasMemoryPage {
@@ -57,19 +57,19 @@ func (m *Memory) ReadBytes(pcProg, ptr, n uint64, env *ExecEnv) ([]byte, error) 
 	}
 	ptrProg := ptr >> 32
 	if pcProg > MaxLoadedPrograms || ptrProg > MaxLoadedPrograms {
-		return nil, ErrSegFault
+		return ErrSegFault
 	}
 	isSelf := pcProg == ptrProg
+	n := len(res)
 	if n > (1 << 32) {
-		return nil, ErrSegFault
+		return ErrSegFault
 	}
-	res := make([]byte, n)
 	tbuf := make([]byte, 8)
 	cur := 0
 	if (ptr & 7) != 0 {
 		x, new := m.Programs[ptrProg].Access(uint32(ptr&0xfffffff8), isSelf, OpRead)
 		if err := chk(x, new); err != nil {
-			return nil, err
+			return err
 		}
 		binary.LittleEndian.PutUint64(tbuf, *x)
 		cur = 8 - int(ptr&7)
@@ -81,7 +81,7 @@ func (m *Memory) ReadBytes(pcProg, ptr, n uint64, env *ExecEnv) ([]byte, error) 
 	for cur+8 <= int(n) {
 		x, new := m.Programs[ptrProg].Access(uint32(ptr+uint64(cur)), isSelf, OpRead)
 		if err := chk(x, new); err != nil {
-			return nil, err
+			return err
 		}
 		binary.LittleEndian.PutUint64(res[cur:cur+8], *x)
 		cur += 8
@@ -89,13 +89,13 @@ func (m *Memory) ReadBytes(pcProg, ptr, n uint64, env *ExecEnv) ([]byte, error) 
 	if cur != int(n) {
 		x, new := m.Programs[ptrProg].Access(uint32(ptr+uint64(cur)), isSelf, OpRead)
 		if err := chk(x, new); err != nil {
-			return nil, err
+			return err
 		}
 		c := int(n) - cur
 		binary.LittleEndian.PutUint64(tbuf, *x)
 		copy(res[cur:cur+c], tbuf[:c])
 	}
-	return res, nil
+	return nil
 }
 
 func (m *Memory) WriteBytes(pcProg, ptr uint64, data []byte, env *ExecEnv) error {
