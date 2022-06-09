@@ -337,3 +337,7 @@ func (c *CPU) GetArg(i int) uint64 {
 func (c *CPU) SetArg(i int, val uint64) {
 	c.Reg[10+i] = val
 }
+
+func (c *CPU) Ret() {
+	c.Pc = c.Reg[1]
+}

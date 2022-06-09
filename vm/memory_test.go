@@ -2,6 +2,7 @@ package vm
 
 import (
 	"math/rand"
+	"strings"
 	"testing"
 )
 
@@ -49,10 +50,54 @@ func TestReadWriteBytes(t *testing.T) {
 		op := rand.Intn(2)
 		if op == 0 {
 			rnd.Read(refMem[l:r])
-			assertEq(t, m.WriteBytes(0, uint64(base+l), refMem[l:r], env), true, "failed to write")
+			assertEq(t, m.WriteBytes(0, uint64(base+l), refMem[l:r], env), nil, "failed to write")
 		} else {
-			assertEq(t, m.ReadBytes(0, uint64(base+l), uint64(r-l), env), refMem[l:r], "read mismatch")
+			mem, err := m.ReadBytes(0, uint64(base+l), uint64(r-l), env)
+			assertEq(t, err, nil, "read error")
+			assertEq(t, mem, refMem[l:r], "read mismatch")
 		}
 	}
+	m.Recycle()
+}
+
+func TestReadWriteBytesErrors(t *testing.T) {
+	m := &Memory{}
+	id, err := m.NewProgram()
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, id, 0, "id mismatch")
+	env := &ExecEnv{
+		Gas: 1000000000,
+	}
+	_, err = m.ReadBytes(0, 0x114514, 100, env)
+	assertEq(t, err, ErrSegFault, "expected error")
+	env.Gas = 100
+	_, err = m.ReadBytes(0, 0x20000000, 100000, env)
+	assertEq(t, err, ErrInsufficientGas, "expected error")
+	env.Gas = 10000000000
+	err = m.WriteBytes(1, 0x40000000, make([]byte, 100), env)
+	assertEq(t, err, ErrSegFault, "expected error")
+	env.Gas = 100
+	err = m.WriteBytes(0, 0x40000000, make([]byte, 100000), env)
+	assertEq(t, err, ErrInsufficientGas, "expected error")
+	m.Recycle()
+}
+
+func TestReadString(t *testing.T) {
+	m := &Memory{}
+	id, err := m.NewProgram()
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, id, 0, "id mismatch")
+	env := &ExecEnv{
+		Gas: 1000000000,
+	}
+	str := "test_string_123" + strings.Repeat("a", 16000)
+	err = m.WriteBytes(0, 0x30000005, []byte(str), env)
+	assertEq(t, err, nil, "error happened")
+	rs, err := m.ReadString(0, 0x30000005, 100, env)
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, rs, str[:100], "read string mismatch")
+	rs, err = m.ReadString(0, 0x30000005, 100000, env)
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, rs, str, "read string mismatch")
 	m.Recycle()
 }
