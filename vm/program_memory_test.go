@@ -2,38 +2,10 @@ package vm
 
 import (
 	"encoding/binary"
-	"io/ioutil"
-	"os/exec"
 	"testing"
+
+	elfx "github.com/mcfx/tcoin/vm/elf"
 )
-
-func buildELFWithFilename(source, filename, binname string) []byte {
-	err := ioutil.WriteFile(filename, []byte(source), 0o755)
-	if err != nil {
-		panic(err)
-	}
-	cmd := exec.Command("riscv64-elf-gcc", filename, "-o", binname,
-		"-nostdlib", "-nodefaultlibs", "-fno-builtin",
-		"-march=rv64im", "-mabi=lp64",
-		"-Wl,--gc-sections", "-fPIE", "-s",
-		"-Ttext", "0x10000190",
-		"-Wl,--section-start,.private_data=0x20000000",
-		"-Wl,--section-start,.shared_data=0x40000000",
-	)
-	err = cmd.Run()
-	if err != nil {
-		panic(err)
-	}
-	res, err := ioutil.ReadFile(binname)
-	if err != nil {
-		panic(err)
-	}
-	return res
-}
-
-func buildELF(source string) []byte {
-	return buildELFWithFilename(source, "/tmp/1a.c", "/tmp/1a")
-}
 
 func assertUint64Ptr(t *testing.T, a *uint64, isNil bool, msg string, args ...interface{}) {
 	if (isNil && a != nil) || (!isNil && a == nil) {
@@ -48,7 +20,7 @@ func TestProgramMemoryPrivileges(t *testing.T) {
 		Gas: 100000000000000000,
 	}
 	pm := ProgramMemory{}
-	elf := buildELF("int _start() { return 0; }")
+	elf := elfx.BuildELF("int _start() { return 0; }")
 	entry, err := pm.LoadELF(elf, 0, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, entry, uint32(0x10000190), "entry mismatch")
@@ -96,11 +68,11 @@ func TestLoadELF(t *testing.T) {
 		Gas: 100000000000000000,
 	}
 	pm := ProgramMemory{}
-	elf := buildELF("int _start() { return 0; }")
+	elf := elfx.BuildELF("int _start() { return 0; }")
 	entry, err := pm.LoadELF(elf, 0, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, entry, uint32(0x10000190), "entry mismatch")
-	elf = buildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
+	elf = elfx.BuildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
 		"__attribute__((section(\".shared_data\"))) unsigned long long b[1] = {0x0114051419190810};" +
 		"int _start() { return a[0] ^ b[0]; }")
 	_, err = pm.LoadELF(elf, 0, env)
@@ -121,11 +93,11 @@ func TestLoadELF(t *testing.T) {
 		assertEq(t, err, nil, "error happened")
 		assertEq(t, entry, uint32(0x10002190+0x1000*i), "entry mismatch")
 	}
-	elf = buildELF("__attribute__((section(\".private_data\"))) int _start() {}")
+	elf = elfx.BuildELF("__attribute__((section(\".private_data\"))) int _start() {}")
 	_, err = pm.LoadELF(elf, 0x30000, env)
 	assertNe(t, err, nil, "expected error")
 	env.Gas = 0
-	elf = buildELF("int _start() { return 0; }")
+	elf = elfx.BuildELF("int _start() { return 0; }")
 	_, err = pm.LoadELF(elf, 0, env)
 	assertNe(t, err, nil, "expected error")
 	pm.Recycle()
@@ -137,6 +109,7 @@ func TestLoad(t *testing.T) {
 	pm.load(0x10000000, 1, append(s, s[:3]...))
 	assertEq(t, pm.blocks[0][0][0], binary.LittleEndian.Uint64(s), "value mismatch")
 	assertEq(t, pm.blocks[0][0][1], uint64(0x30201), "value mismatch")
+	pm.Recycle()
 }
 
 func TestLoadRawCode(t *testing.T) {
@@ -148,4 +121,5 @@ func TestLoadRawCode(t *testing.T) {
 	err := pm.LoadRawCode(s, 0x10000000, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, pm.blocks[0][0][0], binary.LittleEndian.Uint64(s), "value mismatch")
+	pm.Recycle()
 }

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	elfx "github.com/mcfx/tcoin/vm/elf"
 )
 
 const PageSize = 4096
@@ -170,94 +172,45 @@ func (pm *ProgramMemory) LoadRawCode(code []byte, loadOffset uint32, env *ExecEn
 }
 
 func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (uint32, error) {
-	const SizeLimit = 1 << 30
 	if loadOffset%PageSize != 0 {
 		return 0, fmt.Errorf("load offset %d not aligned", loadOffset)
 	}
-	if len(elf) < 0x40 {
-		return 0, fmt.Errorf("invalid ELF: size too small (%d < 0x40)", len(elf))
+	e, err := elfx.ParseELF(elf)
+	if err != nil {
+		return 0, fmt.Errorf("invalid ELF: %v", err)
 	}
-	if binary.LittleEndian.Uint32(elf[:4]) != 0x464c457f {
-		return 0, fmt.Errorf("invalid ELF: header magic mismatch")
-	}
-	if binary.LittleEndian.Uint16(elf[0x12:0x14]) != 243 {
-		return 0, fmt.Errorf("invalid ELF: arch mismatch")
-	}
-	entryPoint := binary.LittleEndian.Uint64(elf[0x18:0x20])
-	if entryPoint >= (1<<32) || entryPoint+uint64(loadOffset) >= (1<<32) {
-		return 0, fmt.Errorf("invalid ELF: entry point too large: %d", entryPoint)
-	}
-	programHeaderOffset := int(binary.LittleEndian.Uint64(elf[0x20:0x28]))
-	if programHeaderOffset > SizeLimit || programHeaderOffset < 0 {
-		return 0, fmt.Errorf("invalid ELF: program header offset invalid: %d", programHeaderOffset)
-	}
-	programHeaderEntrySize := int(binary.LittleEndian.Uint16(elf[0x36:0x38]))
-	numProgramHeaderEntries := int(binary.LittleEndian.Uint16(elf[0x38:0x3a]))
-	targetLen := programHeaderOffset + programHeaderEntrySize*numProgramHeaderEntries
-	if len(elf) < targetLen {
-		return 0, fmt.Errorf("invalid ELF: size too small (%d < %d)", len(elf), targetLen)
-	}
-	if programHeaderEntrySize != 56 {
-		return 0, fmt.Errorf("invalid ELF: program header entry size mismatch (%d != 56)", programHeaderEntrySize)
+	if uint64(e.Entry)+uint64(loadOffset) > (1 << 30) {
+		return 0, fmt.Errorf("load offset %d too large", loadOffset)
 	}
 	segments := []segment{}
 	totPages := 0
-	for i := 0; i < numProgramHeaderEntries; i++ {
-		entry := elf[programHeaderOffset+programHeaderEntrySize*i : programHeaderOffset+programHeaderEntrySize*(i+1)]
-		p_type := binary.LittleEndian.Uint32(entry[:4])
-		p_flags := binary.LittleEndian.Uint32(entry[4:8])
-		p_offset := binary.LittleEndian.Uint64(entry[8:16])
-		p_vaddr := binary.LittleEndian.Uint64(entry[16:24])
-		p_filesz := binary.LittleEndian.Uint64(entry[32:40])
-		p_memsz := binary.LittleEndian.Uint64(entry[40:48])
-		p_align := binary.LittleEndian.Uint64(entry[48:56])
-		if p_type != 1 {
-			return 0, fmt.Errorf("invalid ELF: segment type %d unsupported", p_type)
-		}
-		if p_align != PageSize {
-			return 0, fmt.Errorf("invalid ELF: align %d unsupported", p_align)
-		}
-		privileges := p_flags & 7
-		if p_offset+p_filesz > SizeLimit {
-			return 0, fmt.Errorf("invalid ELF: offset too large: %d", p_offset+p_filesz)
-		}
-		if len(elf) < int(p_offset+p_filesz) {
-			return 0, fmt.Errorf("invalid ELF: size too small (%d < %d)", len(elf), p_offset+p_filesz)
-		}
-		if p_memsz > SizeLimit {
-			return 0, fmt.Errorf("invalid ELF: memsz too large: %d", p_memsz)
-		}
-		if p_vaddr%PageSize != 0 {
-			return 0, fmt.Errorf("invalid ELF: vaddr not aligned: %d", p_vaddr)
-		}
-		numPages := (p_memsz + PageSize - 1) / PageSize
+	for _, seg := range e.Segments {
+		numPages := (seg.MemSz + PageSize - 1) / PageSize
 		if numPages > MaxPagesPerBlock {
-			return 0, fmt.Errorf("invalid ELF: too many pages: %d", numPages)
+			return 0, fmt.Errorf("unsupported ELF: too many pages: %d", numPages)
 		}
-		if p_vaddr >= (1 << 32) {
-			return 0, fmt.Errorf("invalid ELF: vaddr too large: %d", p_vaddr)
-		}
-		tmp1 := p_vaddr + uint64(loadOffset)
-		tmp2 := tmp1 + numPages*PageSize
+		tmp1 := uint64(seg.Addr) + uint64(loadOffset)
+		tmp2 := tmp1 + uint64(numPages*PageSize)
 		bid := tmp1 >> 28
 		if tmp2 >= (1<<32) || bid != (tmp2>>28) {
-			return 0, fmt.Errorf("invalid ELF: segment not in one memory block (end=%d)", tmp2)
+			return 0, fmt.Errorf("unsupported ELF: segment not in one memory block (end=%d)", tmp2)
 		}
 		if bid < 1 || bid > NumBlocks {
-			return 0, fmt.Errorf("invalid ELF: unknown block id %d", bid)
+			return 0, fmt.Errorf("unsupported ELF: unknown block id %d", bid)
 		}
 		addr := uint32(tmp1)
 		for i := 0; i < int(numPages); i++ {
 			pAddr := addr + uint32(i)*PageSize
 			pageId := (pAddr << 4) >> 16
 			if pageId >= MaxPagesPerBlock {
-				return 0, fmt.Errorf("invalid ELF: page id %d too large", pageId)
+				return 0, fmt.Errorf("unsupported ELF: page id %d too large", pageId)
 			}
 			var page *Page = pm.blocks[bid-1][pageId]
 			if page != nil {
-				return 0, fmt.Errorf("invalid ELF: page %d already allocated", pageId)
+				return 0, fmt.Errorf("unsupported ELF: page %d already allocated", pageId)
 			}
 		}
+		privileges := seg.Privileges
 		if bid == 1 {
 			if (privileges & 5) != privileges {
 				return 0, fmt.Errorf("invalid ELF: block 1 only supports rx (required %d)", privileges)
@@ -268,8 +221,8 @@ func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (u
 			}
 		}
 		segments = append(segments, segment{
-			offset:   uint32(p_offset),
-			length:   uint32(p_filesz),
+			offset:   seg.Offset,
+			length:   seg.FileSz,
 			addr:     addr,
 			numPages: uint32(numPages),
 		})
@@ -282,5 +235,5 @@ func (pm *ProgramMemory) LoadELF(elf []byte, loadOffset uint32, env *ExecEnv) (u
 	for _, segment := range segments {
 		pm.load(segment.addr, segment.numPages, elf[segment.offset:segment.offset+segment.length])
 	}
-	return uint32(entryPoint) + loadOffset, nil
+	return e.Entry + loadOffset, nil
 }

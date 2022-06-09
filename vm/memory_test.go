@@ -4,6 +4,8 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+
+	elfx "github.com/mcfx/tcoin/vm/elf"
 )
 
 func TestMemoryAccess(t *testing.T) {
@@ -101,4 +103,50 @@ func TestReadString(t *testing.T) {
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, rs, str, "read string mismatch")
 	m.Recycle()
+}
+
+func TestLoadTrimedELF(t *testing.T) {
+	env := &ExecEnv{
+		Gas: 100000000000000000,
+	}
+	m1 := &Memory{}
+	m2 := &Memory{}
+	m1.NewProgram()
+	m2.NewProgram()
+	elf := elfx.BuildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
+		"__attribute__((section(\".shared_data\"))) unsigned long long b[512] = {0x0114051419190810};" +
+		"__attribute__((section(\".init_code\"))) void *_start() { return start2(); }" +
+		"int start2() { return a[0] * b[0]; }")
+	e, err := elfx.ParseELF(elf)
+	assertEq(t, err, nil, "error happened")
+	elf2, err := elfx.TrimELF(elf, e, []uint32{0x100ff000}, 0x10000010)
+	assertEq(t, err, nil, "error happened")
+	pc1, err := m1.Programs[0].LoadELF(elf, 0, env)
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, pc1, uint32(0x100ff000), "pc mismatch")
+	pc2, err := m2.Programs[0].LoadELF(elf2, 0, env)
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, pc2, uint32(0x10000010), "pc mismatch")
+	b1 := make([]byte, 4096)
+	b2 := make([]byte, 4096)
+	err = m1.ReadBytes(0, 0x20000000, b1, env)
+	assertEq(t, err, nil, "error happened")
+	err = m2.ReadBytes(0, 0x20000000, b2, env)
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, b1, b2, "block 2 not equal")
+	err = m1.ReadBytes(0, 0x40000000, b1, env)
+	assertEq(t, err, nil, "error happened")
+	err = m2.ReadBytes(0, 0x40000000, b2, env)
+	assertEq(t, err, nil, "error happened")
+	assertEq(t, b1, b2, "block 4 not equal")
+	err = m1.ReadBytes(0, 0x10000000, b1, env)
+	assertEq(t, err, nil, "error happened")
+	err = m2.ReadBytes(0, 0x10000000, b2, env)
+	assertEq(t, err, nil, "error happened")
+	for i := 0; i < 0x190; i++ {
+		b1[i] = b2[i]
+	}
+	assertEq(t, b1, b2, "block 1 not equal")
+	m1.Recycle()
+	m2.Recycle()
 }
