@@ -76,14 +76,17 @@ func execVM(ctx *vmCtx, pc, gas, callValue uint64, args []uint64, caller int) (u
 		for {
 			curPc := ctx.cpus[prog].Pc
 			if curPc == RetAddr {
+				ctx.s.Merge()
 				return cpu.GetArg(0), nil
 			}
 			if (curPc >> 32) == SyscallProg {
 				if (curPc & 3) != 0 {
 					return 0, ErrInvalidSyscall
 				}
-				execSyscall(ctx, env, prog, ((1<<63)-curPc)>>2, callValue, caller)
-				// todo: process syscall
+				err = execSyscall(ctx, env, prog, ((1<<63)-curPc)>>2, callValue, caller)
+				if err != nil {
+					return 0, err
+				}
 				continue
 			}
 			if !ctx.isValidJumpDest(curPc) {
@@ -97,8 +100,6 @@ func execVM(ctx *vmCtx, pc, gas, callValue uint64, args []uint64, caller int) (u
 			cpu.Ret()
 		}
 	}
-	ctx.s.Merge()
-	return cpu.GetArg(0), nil
 }
 
 func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext) error {

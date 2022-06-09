@@ -50,9 +50,12 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig, execCallbac
 	}
 	sl := storage.EmptySlice()
 	err := block.ExecuteBlock(gConfig.GenesisBlock, gConfig.GenesisBlockReward, sl, &block.ExecutionContext{
-		Height:   0,
-		Time:     gConfig.GenesisBlock.Time,
-		Callback: execCallback,
+		Height:     0,
+		Time:       gConfig.GenesisBlock.Time,
+		Miner:      gConfig.GenesisBlock.Miner,
+		Difficulty: gConfig.GenesisConsensusState.Difficulty,
+		ChainId:    gConfig.ChainId,
+		Callback:   execCallback,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to init node: %v", err)
@@ -378,6 +381,7 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			if err != nil {
 				return
 			}
+			oldCs := cs
 			cs = cs.Copy()
 			if !cs.CheckAndUpdate(b) {
 				return
@@ -396,9 +400,12 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			if ok {
 				sln := storage.ForkSlice(sl)
 				err := block.ExecuteBlock(b, cn.gConfig.BlockReward, sln, &block.ExecutionContext{
-					Height:   cs.Height,
-					Time:     b.Time,
-					Callback: cn.execCallback,
+					Height:     cs.Height,
+					Time:       b.Time,
+					Miner:      b.Miner,
+					Difficulty: oldCs.Difficulty,
+					ChainId:    cn.gConfig.ChainId,
+					Callback:   cn.execCallback,
 				})
 				if err == nil {
 					sln.Freeze()
@@ -594,7 +601,9 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 	defer cn.seMut.Unlock()
 	sl := storage.ForkSlice(cn.se.HighestSlice)
 	b := &block.Block{}
-	b.Header.ParentHash = block.HashType(cn.se.HighestChain[len(cn.se.HighestChain)-1].Key)
+	ls := cn.se.HighestChain[len(cn.se.HighestChain)-1]
+	b.Header.ParentHash = block.HashType(ls.Key)
+	cs, _ := cn.getConsensusState(ls.S.Height(), b.Header.ParentHash)
 	b.Miner = miner
 	b.Time = uint64(time.Now().UnixNano())
 	b.Txs = make([]*block.Transaction, 0)
@@ -602,9 +611,12 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 		tx := v.Object.(*block.Transaction)
 		sl2 := storage.ForkSlice(sl)
 		err := block.ExecuteTx(tx, sl2, &block.ExecutionContext{
-			Height:   cn.se.HighestSlice.Height() + 1,
-			Time:     b.Time,
-			Callback: cn.execCallback,
+			Height:     cn.se.HighestSlice.Height() + 1,
+			Time:       b.Time,
+			Miner:      miner,
+			Difficulty: cs.Difficulty,
+			ChainId:    cn.gConfig.ChainId,
+			Callback:   cn.execCallback,
 		})
 		if err == nil {
 			sl2.Merge()
