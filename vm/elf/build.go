@@ -5,7 +5,7 @@ import (
 	"os/exec"
 )
 
-func BuildELFWithFilename(source, filename, binname string) []byte {
+func debugBuildELFWithFilename(source, filename, binname string) []byte {
 	err := ioutil.WriteFile(filename, []byte(source), 0o755)
 	if err != nil {
 		panic(err)
@@ -30,6 +30,10 @@ func BuildELFWithFilename(source, filename, binname string) []byte {
 	return res
 }
 
-func BuildELF(source string) []byte {
-	return BuildELFWithFilename(source, "/tmp/1a.c", "/tmp/1a")
+func DebugBuildELF(source string) []byte {
+	return debugBuildELFWithFilename(source, "/tmp/1a.c", "/tmp/1a")
+}
+
+func DebugBuildAsmELF(source string) []byte {
+	return debugBuildELFWithFilename(source, "/tmp/2a.s", "/tmp/2a")
 }

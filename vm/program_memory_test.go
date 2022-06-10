@@ -20,7 +20,7 @@ func TestProgramMemoryPrivileges(t *testing.T) {
 		Gas: 100000000000000000,
 	}
 	pm := ProgramMemory{}
-	elf := elfx.BuildELF("int _start() { return 0; }")
+	elf := elfx.DebugBuildELF("int _start() { return 0; }")
 	entry, err := pm.LoadELF(elf, 0, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, entry, uint32(0x10000190), "entry mismatch")
@@ -68,11 +68,11 @@ func TestLoadELF(t *testing.T) {
 		Gas: 100000000000000000,
 	}
 	pm := ProgramMemory{}
-	elf := elfx.BuildELF("int _start() { return 0; }")
+	elf := elfx.DebugBuildELF("int _start() { return 0; }")
 	entry, err := pm.LoadELF(elf, 0, env)
 	assertEq(t, err, nil, "error happened")
 	assertEq(t, entry, uint32(0x10000190), "entry mismatch")
-	elf = elfx.BuildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
+	elf = elfx.DebugBuildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
 		"__attribute__((section(\".shared_data\"))) unsigned long long b[1] = {0x0114051419190810};" +
 		"int _start() { return a[0] ^ b[0]; }")
 	_, err = pm.LoadELF(elf, 0, env)
@@ -93,11 +93,11 @@ func TestLoadELF(t *testing.T) {
 		assertEq(t, err, nil, "error happened")
 		assertEq(t, entry, uint32(0x10002190+0x1000*i), "entry mismatch")
 	}
-	elf = elfx.BuildELF("__attribute__((section(\".private_data\"))) int _start() {}")
+	elf = elfx.DebugBuildELF("__attribute__((section(\".private_data\"))) int _start() {}")
 	_, err = pm.LoadELF(elf, 0x30000, env)
 	assertNe(t, err, nil, "expected error")
 	env.Gas = 0
-	elf = elfx.BuildELF("int _start() { return 0; }")
+	elf = elfx.DebugBuildELF("int _start() { return 0; }")
 	_, err = pm.LoadELF(elf, 0, env)
 	assertNe(t, err, nil, "expected error")
 	pm.Recycle()

@@ -15,7 +15,7 @@ func testExecCode(t *testing.T, code []string, targetGas uint64) {
 	env := &ExecEnv{
 		Gas: InitialGas,
 	}
-	elf := elfx.BuildELFWithFilename(strings.Join(code, "\n"), "/tmp/2a.S", "/tmp/2a")
+	elf := elfx.DebugBuildAsmELF(strings.Join(code, "\n"))
 	id, err := mem.NewProgram()
 	assertEq(t, id, 0, "program id mismatch")
 	assertEq(t, err, nil, "error happened")
@@ -74,7 +74,7 @@ func TestExecFail(t *testing.T) {
 	env := &ExecEnv{
 		Gas: InitialGas,
 	}
-	elf := elfx.BuildELFWithFilename(strings.Join(code, "\n"), "/tmp/2a.S", "/tmp/2a")
+	elf := elfx.DebugBuildAsmELF(strings.Join(code, "\n"))
 	id, err := mem.NewProgram()
 	assertEq(t, id, 0, "program id mismatch")
 	assertEq(t, err, nil, "error happened")

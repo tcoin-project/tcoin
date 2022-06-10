@@ -113,7 +113,7 @@ func TestLoadTrimedELF(t *testing.T) {
 	m2 := &Memory{}
 	m1.NewProgram()
 	m2.NewProgram()
-	elf := elfx.BuildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
+	elf := elfx.DebugBuildELF("__attribute__((section(\".private_data\"))) unsigned long long a[1] = {0xdeadbeef12345678};" +
 		"__attribute__((section(\".shared_data\"))) unsigned long long b[512] = {0x0114051419190810};" +
 		"__attribute__((section(\".init_code\"))) void *_start() { return start2(); }" +
 		"int start2() { return a[0] * b[0]; }")
