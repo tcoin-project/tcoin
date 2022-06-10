@@ -1,6 +1,8 @@
 package vm
 
-import "errors"
+import (
+	"errors"
+)
 
 var ErrIllegalPc = errors.New("illegal pc")
 var ErrSegFault = errors.New("segmentation fault")

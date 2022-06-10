@@ -91,7 +91,7 @@ func testBatchInsns(t *testing.T, regs [][]uint64, insns []string) {
 		t.Fatal(err)
 	}
 	bs := buf.Bytes()
-	asm := asmToBytes(strings.Join(insns, "\n"))
+	asm := AsmToBytes(strings.Join(insns, "\n"))
 	if len(asm) != len(regs)*4 {
 		t.Fatal("asm length invalid")
 	}
@@ -447,7 +447,7 @@ func testBatchInsnsJump(t *testing.T, regs [][]uint64, insns []string) {
 		t.Fatal(err)
 	}
 	bs := buf.Bytes()
-	asm := asmToBytes(strings.Join(rInsns, "\n"))
+	asm := AsmToBytes(strings.Join(rInsns, "\n"))
 	if len(asm) != len(regs)*4 {
 		t.Fatal("asm length invalid")
 	}

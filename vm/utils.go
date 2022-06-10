@@ -151,7 +151,7 @@ func genJType(opcode, rd uint32, imm int32) uint32 {
 	return opcode | rd<<7 | immn<<12
 }
 
-func asmToBytes(asm string) []byte {
+func AsmToBytes(asm string) []byte {
 	fullAsm := ".section .text\n.globl _start\n_start:\n" + asm + "\n"
 	err := ioutil.WriteFile("/tmp/1.S", []byte(fullAsm), 0o755)
 	if err != nil {
@@ -175,7 +175,7 @@ func asmToBytes(asm string) []byte {
 }
 
 func asmToInt(asm string) uint32 {
-	b := asmToBytes(asm)
+	b := AsmToBytes(asm)
 	if len(b) != 4 {
 		panic("asm length is not 4")
 	}

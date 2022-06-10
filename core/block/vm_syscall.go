@@ -125,6 +125,30 @@ func (ctx *vmCtx) loadContractCode(call *callCtx, addr AddressType) ([]byte, err
 	return res, nil
 }
 
+func storeContractCode(s *storage.Slice, addr AddressType, elf []byte) {
+	n := len(elf)
+	nBlocks := (len(elf) + storage.DataLen - 1) / storage.DataLen
+	key := storage.KeyType{}
+	key[0] = 1
+	copy(key[1:33], addr[:])
+	key[64] = 1
+	val := storage.DataType{}
+	val[0] = 1
+	binary.LittleEndian.PutUint64(val[8:16], uint64(n))
+	s.Write(key, val)
+	key[0] = 2
+	for i := 0; i < int(nBlocks); i++ {
+		binary.BigEndian.PutUint64(key[49:65], uint64(i))
+		if i+1 < int(nBlocks) {
+			copy(val[:], elf[i*storage.DataLen:(i+1)*storage.DataLen])
+		} else {
+			val = storage.DataType{}
+			copy(val[:n-i*storage.DataLen], elf[i*storage.DataLen:])
+		}
+		s.Write(key, val)
+	}
+}
+
 func (ctx *vmCtx) create(call *callCtx, elf []byte, flags, nonce uint64) (AddressType, error) {
 	env := call.env
 	mem := ctx.mem
@@ -159,6 +183,7 @@ func (ctx *vmCtx) create(call *callCtx, elf []byte, flags, nonce uint64) (Addres
 		if err != nil {
 			return addr, err
 		}
+		ctx.cpus[id].Reg[2] = DefaultSp
 		tEntry, err := ctx.execVM(&callCtx{
 			s:         call.s,
 			env:       env,
@@ -189,28 +214,13 @@ func (ctx *vmCtx) create(call *callCtx, elf []byte, flags, nonce uint64) (Addres
 		}
 		elf = elfNew
 	}
-	n := len(elf)
 	nBlocks := (len(elf) + storage.DataLen - 1) / storage.DataLen
 	gas := uint64(nBlocks * GasSyscallCreateStorePerBlock)
 	if env.Gas < gas {
 		return addr, vm.ErrInsufficientGas
 	}
 	env.Gas -= gas
-	val[0] = 1
-	binary.LittleEndian.PutUint64(val[8:16], uint64(n))
-	call.s.Write(key, val)
-	key[0] = 2
-	res := make([]byte, nBlocks*storage.DataLen)
-	for i := 0; i < int(nBlocks); i++ {
-		binary.BigEndian.PutUint64(key[49:65], uint64(i))
-		if i+1 < int(nBlocks) {
-			copy(val[:], res[i*storage.DataLen:(i+1)*storage.DataLen])
-		} else {
-			val = storage.DataType{}
-			copy(val[:n-i*storage.DataLen], res[i*storage.DataLen:])
-		}
-		call.s.Write(key, val)
-	}
+	storeContractCode(call.s, addr, elf)
 	return addr, nil
 }
 
@@ -320,6 +330,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 			if err != nil {
 				return err
 			}
+			ctx.cpus[id].Reg[2] = DefaultSp
 			res, err := ctx.execVM(&callCtx{
 				s:         call.s,
 				env:       env,
@@ -407,6 +418,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		}
 		ctx.jumpDest[prog] = true
 	case SYSCALL_TRANSFER:
+		// todo: callback
 		addr := AddressType{}
 		err := mem.ReadBytes(prog, cpu.GetArg(0), addr[:], env)
 		if err != nil {

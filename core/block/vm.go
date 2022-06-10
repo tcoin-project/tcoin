@@ -42,6 +42,17 @@ type callCtx struct {
 	callType  int
 }
 
+func newVmCtx(ctx *ExecutionContext, origin AddressType) *vmCtx {
+	return &vmCtx{
+		ctx:      ctx,
+		mem:      &vm.Memory{},
+		loadId:   make(map[AddressType]int),
+		elfCache: make(map[AddressType][]byte),
+		jumpDest: make(map[uint64]bool),
+		origin:   origin,
+	}
+}
+
 func (ctx *vmCtx) newProgram(addr AddressType) (int, bool, error) {
 	if x, ok := ctx.loadId[addr]; ok {
 		return x, false, nil
@@ -73,7 +84,6 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 	env.Gas -= GasCall
 	cpu := &ctx.cpus[call.prog]
 	oldCpu := *cpu
-	// todo: consider revert
 	defer func() {
 		*cpu = oldCpu
 	}()
@@ -89,7 +99,6 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 		for {
 			curPc := cpu.Pc
 			if curPc == RetAddr {
-				//call.s.Merge()
 				return cpu.GetArg(0), nil
 			}
 			if (curPc >> 32) == SyscallProg {
@@ -105,7 +114,6 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 			if !ctx.isValidJumpDest(curPc) {
 				return 0, ErrInvalidJumpDest
 			}
-
 			r, err := ctx.execVM(&callCtx{
 				s:         call.s,
 				env:       env,
@@ -120,6 +128,7 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 			}
 			cpu.SetArg(0, r)
 			cpu.Ret()
+			break
 		}
 	}
 }
@@ -127,21 +136,15 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext) error {
 	// todo: fork s outside
 	const initPc = 0x10000000
-	mem := &vm.Memory{}
 	if gasLimit < GasVmTxRawCode {
 		return vm.ErrInsufficientGas
 	}
 	env := &vm.ExecEnv{
 		Gas: gasLimit - GasVmTxRawCode,
 	}
-	vmCtx := &vmCtx{
-		ctx:    ctx,
-		mem:    mem,
-		loadId: make(map[AddressType]int),
-		origin: origin,
-	}
+	vmCtx := newVmCtx(ctx, origin)
 	id, _, _ := vmCtx.newProgram(origin)
-	err := mem.Programs[id].LoadRawCode(data, initPc, env)
+	err := vmCtx.mem.Programs[id].LoadRawCode(data, initPc, env)
 	vmCtx.entry[id] = 0
 	if err != nil {
 		return err
@@ -156,5 +159,6 @@ func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storag
 		caller:    id,
 		callType:  CallExternal,
 	})
+	vmCtx.mem.Recycle()
 	return err
 }
