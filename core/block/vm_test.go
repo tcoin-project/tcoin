@@ -10,14 +10,15 @@ import (
 )
 
 type testVmCtx struct {
-	t             *testing.T
-	asmCode       string
-	origin        AddressType
-	gasLimit      uint64
-	s             *storage.Slice
-	contracts     map[AddressType]string
-	expectedError error
-	expectedGas   uint64
+	t                      *testing.T
+	asmCode                string
+	origin                 AddressType
+	gasLimit               uint64
+	s                      *storage.Slice
+	contracts              map[AddressType]string
+	expectedError          error
+	expectedGas            uint64
+	expectedGasWithBaseLen uint64
 }
 
 func asAsmByteArr(s []byte) string {
@@ -88,6 +89,7 @@ func (t *testVmCtx) runInner() {
 	if err != nil {
 		t.t.Fatal(err)
 	}
+	totLen := len(code)
 	for a, c := range t.contracts {
 		elf := vm.AsmToBytes(c)
 		storeContractCode(t.s, a, elf)
@@ -105,6 +107,7 @@ func (t *testVmCtx) runInner() {
 		vmCtx.entry[tid] = initPc
 		vmCtx.jumpDest[(uint64(tid)<<32)|initPc] = true
 		vmCtx.cpus[tid].Reg[2] = DefaultSp
+		totLen += len(elf)
 	}
 	vmCtx.cpus[id].Reg[2] = DefaultSp
 	_, err = vmCtx.execVM(&callCtx{
@@ -119,6 +122,9 @@ func (t *testVmCtx) runInner() {
 	vmCtx.mem.Recycle()
 	if err != t.expectedError {
 		t.t.Fatalf("unexpected error: %v != %v", err, t.expectedError)
+	}
+	if t.expectedGasWithBaseLen != 0 {
+		t.expectedGas = t.expectedGasWithBaseLen + uint64(totLen/4)*vm.GasInstructionBase
 	}
 	if t.expectedGas != 0 && t.gasLimit-env.Gas != t.expectedGas {
 		t.t.Fatalf("gas mismatch: %d != %d", t.gasLimit-env.Gas, t.expectedGas)
@@ -145,7 +151,7 @@ func TestVMBasicExec(t *testing.T) {
 	}).runInner()
 	(&testVmCtx{
 		t:       t,
-		asmCode: "li a0, 3; li a1, 4; li a2, 0x11; slli a2, a2, 28; mv s0, ra; jalr a2; li a1, 7; bne a0, a1, _start-4; mv ra, s0; ret",
+		asmCode: "li a0, 3; li a1, 4; li a2, 0x110000000; mv s0, ra; jalr a2; li a1, 7; bne a0, a1, _start-2048; mv ra, s0; ret",
 		contracts: map[AddressType]string{
 			(AddressType{6, 1}): "xor a0, a0, a1; ret",
 		},

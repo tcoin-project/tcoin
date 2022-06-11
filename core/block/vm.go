@@ -96,19 +96,24 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 		if err != nil {
 			return 0, err
 		}
-		for {
+		for (cpu.Pc >> 32) != call.prog {
 			curPc := cpu.Pc
 			if curPc == RetAddr {
+				//fmt.Printf("gas: %d\n", env.Gas)
 				return cpu.GetArg(0), nil
 			}
 			if (curPc >> 32) == SyscallProg {
+				//fmt.Printf("syscall: %x %d\n", curPc, ((1<<63)-curPc)>>2)
 				if (curPc & 3) != 0 {
 					return 0, ErrInvalidSyscall
 				}
+				//fmt.Printf("gas1: %d\n", env.Gas)
 				err = ctx.execSyscall(call, ((1<<63)-curPc)>>2)
+				//fmt.Printf("gas2: %d\n", env.Gas)
 				if err != nil {
 					return 0, err
 				}
+				cpu.Ret()
 				continue
 			}
 			if !ctx.isValidJumpDest(curPc) {
@@ -128,7 +133,6 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 			}
 			cpu.SetArg(0, r)
 			cpu.Ret()
-			break
 		}
 	}
 }
