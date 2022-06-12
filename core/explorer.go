@@ -46,7 +46,8 @@ func explorerReadListAddr(s *storage.Slice, addr block.AddressType, id uint64, l
 	return explorerReadList(s, k, l, r)
 }
 
-func explorerTransferCallback(s *storage.Slice, from block.AddressType, to block.AddressType, value uint64, tx *block.Transaction, ctx *block.ExecutionContext) {
+func explorerTransferCallback(s *storage.Slice, from block.AddressType, to block.AddressType, value uint64, msg []byte, tx *block.Transaction, ctx *block.ExecutionContext) {
+	// todo: process msg
 	v := storage.DataType{}
 	binary.LittleEndian.PutUint64(v[:8], value)
 	binary.LittleEndian.PutUint64(v[8:16], ctx.Time)

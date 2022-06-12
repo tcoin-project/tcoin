@@ -75,9 +75,10 @@ var GasSyscallBase = map[int]uint64{
 	SYSCALL_LOAD_ELF:       500,
 }
 
-const GasSyscallSha256PerBlock = 30
-const GasSyscallEd25519PerBlock = 50
+const GasSyscallSha256PerBlock = 60
+const GasSyscallEd25519PerBlock = 100
 const GasSyscallRevertPerByte = 1
+const GasSyscallTransferMessagePerByte = 1
 const GasSyscallCreatePerByte = 1
 const GasSyscallCreateStorePerBlock = 10000
 const GasLoadContractCodeCached = 400
@@ -260,7 +261,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		val := storage.DataType{}
 		key[0] = 2
 		copy(key[1:33], ctx.addr[prog][:])
-		err := mem.ReadBytes(prog, cpu.GetArg(0), key[1:33], env)
+		err := mem.ReadBytes(prog, cpu.GetArg(0), key[33:], env)
 		if err != nil {
 			return err
 		}
@@ -273,7 +274,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		key := storage.KeyType{}
 		key[0] = 2
 		copy(key[1:33], ctx.addr[prog][:])
-		err := mem.ReadBytes(prog, cpu.GetArg(0), key[1:33], env)
+		err := mem.ReadBytes(prog, cpu.GetArg(0), key[33:], env)
 		if err != nil {
 			return err
 		}
@@ -428,13 +429,27 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		if selfInfo.Balance < value {
 			return ErrInsufficientBalance
 		}
+		n := cpu.GetArg(3)
+		if n > MaxByteArrayLen {
+			return ErrIllegalSyscallParameters
+		}
+		gas := n * GasSyscallTransferMessagePerByte
+		if env.Gas < gas {
+			return vm.ErrInsufficientGas
+		}
+		env.Gas -= gas
+		buf := make([]byte, n)
+		err = mem.ReadBytes(prog, cpu.GetArg(2), buf, env)
+		if err != nil {
+			return err
+		}
 		targetInfo := GetAccountInfo(call.s, addr)
 		selfInfo.Balance -= value
 		targetInfo.Balance += value
 		SetAccountInfo(call.s, ctx.addr[prog], selfInfo)
-		SetAccountInfo(call.s, ctx.addr[prog], targetInfo)
+		SetAccountInfo(call.s, addr, targetInfo)
 		if ctx.ctx.Callback != nil {
-			ctx.ctx.Callback.Transfer(call.s, ctx.addr[prog], addr, value, ctx.tx, ctx.ctx)
+			ctx.ctx.Callback.Transfer(call.s, ctx.addr[prog], addr, value, buf, ctx.tx, ctx.ctx)
 		}
 	case SYSCALL_CREATE:
 		n := cpu.GetArg(2)
@@ -487,6 +502,14 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		}
 		pk := make([]byte, ed25519.PublicKeySize)
 		sig := make([]byte, ed25519.SignatureSize)
+		err = mem.ReadBytes(prog, cpu.GetArg(2), pk, env)
+		if err != nil {
+			return err
+		}
+		err = mem.ReadBytes(prog, cpu.GetArg(3), sig, env)
+		if err != nil {
+			return err
+		}
 		var res uint64 = 0
 		if ed25519.Verify(pk, buf, sig) {
 			res = 1

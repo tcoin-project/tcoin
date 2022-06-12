@@ -57,12 +57,12 @@ const auto protectedCall = reinterpret_cast<const void *(
         *)(void *(call)(uint64_t, void *), uint64_t a1, void *a2,
            uint64_t value, uint64_t gasLimit, bool *success, char *errorMsg)>(
     syscall::addr(SYSCALL_PROTECTED_CALL));
-const auto transfer = reinterpret_cast<bool (*)(
+const auto transfer = reinterpret_cast<void (*)(
     const Address *addr, uint64_t value, const char *msg, size_t msgLen)>(
     syscall::addr(SYSCALL_TRANSFER));
-const auto create =
-    reinterpret_cast<Address (*)(const char *code, size_t len, uint64_t flags,
-                              uint64_t nonce)>(syscall::addr(SYSCALL_CREATE));
+const auto create = reinterpret_cast<Address (*)(
+    const char *code, size_t len, uint64_t flags, uint64_t nonce)>(
+    syscall::addr(SYSCALL_CREATE));
 const auto loadELF =
     reinterpret_cast<start_t (*)(const Address *addr, size_t offset)>(
         syscall::addr(SYSCALL_LOAD_ELF));
@@ -80,9 +80,8 @@ namespace storage {
 const auto store =
     reinterpret_cast<void (*)(const char *key, const char *value)>(
         syscall::addr(SYSCALL_STORAGE_STORE));
-const auto load =
-    reinterpret_cast<void (*)(const char *key, const char *value)>(
-        syscall::addr(SYSCALL_STORAGE_LOAD));
+const auto load = reinterpret_cast<void (*)(const char *key, char *value)>(
+    syscall::addr(SYSCALL_STORAGE_LOAD));
 } // namespace storage
 namespace block {
 const auto time = reinterpret_cast<uint64_t (*)()>(syscall::addr(SYSCALL_TIME));

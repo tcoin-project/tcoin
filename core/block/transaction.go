@@ -158,7 +158,7 @@ func ExecuteTx(tx *Transaction, s *storage.Slice, ctx *ExecutionContext) error {
 	receiverAccount.Balance += tx.Value
 	SetAccountInfo(s, tx.Receiver, receiverAccount)
 	if ctx.Callback != nil {
-		ctx.Callback.Transfer(s, senderAddr, tx.Receiver, tx.Value, tx, ctx)
+		ctx.Callback.Transfer(s, senderAddr, tx.Receiver, tx.Value, tx.Data, tx, ctx)
 	}
 	return nil
 }

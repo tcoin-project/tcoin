@@ -20,7 +20,7 @@ type testVmCtx struct {
 	origin                 AddressType
 	gasLimit               uint64
 	s                      *storage.Slice
-	ecxt                   *ExecutionContext
+	ectx                   *ExecutionContext
 	contracts              []testContract
 	expectedError          error
 	expectedGas            uint64
@@ -78,8 +78,8 @@ func (t *testVmCtx) runInner() {
 	if t.s == nil {
 		t.s = storage.EmptySlice()
 	}
-	if t.ecxt == nil {
-		t.ecxt = &ExecutionContext{
+	if t.ectx == nil {
+		t.ectx = &ExecutionContext{
 			Height:     200,
 			Time:       300,
 			Miner:      AddressType{2, 3, 4},
@@ -91,7 +91,7 @@ func (t *testVmCtx) runInner() {
 	env := &vm.ExecEnv{
 		Gas: t.gasLimit,
 	}
-	vmCtx := newVmCtx(t.ecxt, t.origin, nil)
+	vmCtx := newVmCtx(t.ectx, t.origin, nil)
 	id, _, _ := vmCtx.newProgram(t.origin)
 	err := vmCtx.mem.Programs[id].LoadRawCode(code, initPc, env)
 	vmCtx.entry[id] = 0

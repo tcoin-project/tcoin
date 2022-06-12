@@ -156,7 +156,7 @@ func ExecuteBlock(b *Block, reward uint64, s *storage.Slice, ctx *ExecutionConte
 	info.Balance += totalFee + reward
 	SetAccountInfo(s, b.Miner, info)
 	if ctx.Callback != nil {
-		ctx.Callback.Transfer(s, AddressType{}, b.Miner, totalFee+reward, nil, ctx)
+		ctx.Callback.Transfer(s, AddressType{}, b.Miner, totalFee+reward, nil, nil, ctx)
 		ctx.Callback.Block(s, b, ctx)
 	}
 	return nil

@@ -43,6 +43,9 @@ func (m *Memory) Access(pcProg, ptr uint64, op int) (*uint64, bool) {
 
 // todo: optimize consecutive memory access
 func (m *Memory) ReadBytes(pcProg, ptr uint64, res []byte, env *ExecEnv) error {
+	if len(res) == 0 {
+		return nil
+	}
 	chk := func(a *uint64, b bool) error {
 		if b {
 			if env.Gas < GasMemoryPage {
@@ -99,6 +102,9 @@ func (m *Memory) ReadBytes(pcProg, ptr uint64, res []byte, env *ExecEnv) error {
 }
 
 func (m *Memory) WriteBytes(pcProg, ptr uint64, data []byte, env *ExecEnv) error {
+	if len(data) == 0 {
+		return nil
+	}
 	chk := func(a *uint64, b bool) error {
 		if b {
 			if env.Gas < GasMemoryPage {

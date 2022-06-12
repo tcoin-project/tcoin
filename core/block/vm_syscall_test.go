@@ -1,6 +1,8 @@
 package block
 
 import (
+	"crypto/ed25519"
+	"crypto/sha256"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -195,22 +197,149 @@ func TestVMSyscallCallValue(t *testing.T) {
 	// todo: after test protected call
 }
 
-func TestVMSyscallStorageStore(t *testing.T) {
-	// todo
+func TestVMSyscallStorageStoreLoad(t *testing.T) {
+	genStoreCode := func(key HashType, val storage.DataType) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, key",
+			"la a1, val",
+			fmt.Sprintf("li t0, -%d", SYSCALL_STORAGE_STORE*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv ra, s0",
+			"ret",
+			"key:",
+			asAsmByteArr(key[:]),
+			"val:",
+			asAsmByteArr(val[:]),
+		}, "\n")
+	}
+	genLoadCode := func(key HashType, val storage.DataType) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, key",
+			"addi a1, sp, -32",
+			fmt.Sprintf("li t0, -%d", SYSCALL_STORAGE_LOAD*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv a0, a1",
+			"la a3, expected",
+			"ld a1, 0(a0)",
+			"ld a2, 0(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 8(a0)",
+			"ld a2, 8(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 16(a0)",
+			"ld a2, 16(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 24(a0)",
+			"ld a2, 24(a3)",
+			"bne a1, a2, _start-2048",
+			"mv ra, s0",
+			"ret",
+			"key:",
+			asAsmByteArr(key[:]),
+			"expected:",
+			asAsmByteArr(val[:]),
+		}, "\n")
+	}
 	rnd := rand.New(rand.NewSource(114518))
-	_ = rnd
-}
-
-func TestVMSyscallStorageLoad(t *testing.T) {
-	// todo
-	rnd := rand.New(rand.NewSource(114519))
-	_ = rnd
+	addr := make([]AddressType, 3)
+	key := make([]HashType, 2)
+	val := make([]storage.DataType, len(addr)*len(key))
+	for i := 0; i < len(addr); i++ {
+		rnd.Read(addr[i][:])
+		for j := 0; j < len(key); j++ {
+			rnd.Read(val[i*len(key)+j][:])
+		}
+	}
+	for i := 0; i < len(key); i++ {
+		rnd.Read(key[i][:])
+	}
+	s := storage.EmptySlice()
+	for i := 0; i < len(addr); i++ {
+		for j := 0; j < len(key); j++ {
+			(&testVmCtx{
+				t:                      t,
+				s:                      s,
+				asmCode:                genStoreCode(key[j], val[i*len(key)+j]),
+				expectedGasWithBaseLen: vm.GasInstructionBase*-16 + vm.GasMemoryPage + GasCall + GasSyscallBase[SYSCALL_STORAGE_STORE],
+				expectedError:          nil,
+				origin:                 addr[i],
+			}).runInner()
+		}
+	}
+	for i := 0; i < len(addr); i++ {
+		for j := 0; j < len(key); j++ {
+			(&testVmCtx{
+				t:                      t,
+				s:                      s,
+				asmCode:                genLoadCode(key[j], val[i*len(key)+j]),
+				expectedGasWithBaseLen: vm.GasInstructionBase*-16 + vm.GasMemoryOp*8 + vm.GasMemoryPage*2 + GasCall + GasSyscallBase[SYSCALL_STORAGE_LOAD],
+				expectedError:          nil,
+				origin:                 addr[i],
+			}).runInner()
+		}
+	}
 }
 
 func TestVMSyscallSha256(t *testing.T) {
-	// todo
+	genCode := func(s []byte) string {
+		hash := sha256.Sum256(s)
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, str",
+			fmt.Sprintf("li a1, %d", len(s)),
+			"addi a2, sp, -32",
+			fmt.Sprintf("li t0, -%d", SYSCALL_SHA256*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv a0, a2",
+			"la a3, expected",
+			"ld a1, 0(a0)",
+			"ld a2, 0(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 8(a0)",
+			"ld a2, 8(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 16(a0)",
+			"ld a2, 16(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 24(a0)",
+			"ld a2, 24(a3)",
+			"bne a1, a2, _start-2048",
+			"mv ra, s0",
+			"ret",
+			"expected:",
+			asAsmByteArr(hash[:]),
+			"str:",
+			asAsmByteArr(s),
+		}, "\n")
+	}
+	const Len1 = 3517
+	const Len2 = 142580
 	rnd := rand.New(rand.NewSource(114520))
-	_ = rnd
+	var addr AddressType
+	rnd.Read(addr[:])
+	data := make([]byte, Len1)
+	rnd.Read(data)
+	(&testVmCtx{
+		t:             t,
+		asmCode:       genCode(data),
+		expectedGas:   vm.GasInstructionBase*26 + vm.GasMemoryOp*8 + vm.GasMemoryPage*2 + GasCall + GasSyscallBase[SYSCALL_SHA256] + (Len1+63)/64*GasSyscallSha256PerBlock,
+		expectedError: nil,
+		origin:        addr,
+	}).runInner()
+	data = make([]byte, Len2)
+	rnd.Read(data)
+	(&testVmCtx{
+		t:             t,
+		asmCode:       genCode(data),
+		expectedGas:   vm.GasInstructionBase*26 + vm.GasMemoryOp*8 + vm.GasMemoryPage*36 + GasCall + GasSyscallBase[SYSCALL_SHA256] + (Len2+63)/64*GasSyscallSha256PerBlock,
+		expectedError: nil,
+		origin:        addr,
+	}).runInner()
 }
 
 func TestVMSyscallBalance(t *testing.T) {
@@ -282,7 +411,7 @@ func TestVMSyscallTime(t *testing.T) {
 	val := uint64(rnd.Int63())
 	(&testVmCtx{
 		t:       t,
-		ecxt:    &ExecutionContext{Time: val},
+		ectx:    &ExecutionContext{Time: val},
 		asmCode: genSimpleCallCode(1),
 		contracts: []testContract{
 			{addr: AddressType{1, 2, 3}, code: genCmpIntCode(SYSCALL_TIME, val)},
@@ -294,9 +423,20 @@ func TestVMSyscallTime(t *testing.T) {
 }
 
 func TestVMSyscallMiner(t *testing.T) {
-	// todo (soon)
 	rnd := rand.New(rand.NewSource(114526))
-	_ = rnd
+	var addr AddressType
+	rnd.Read(addr[:])
+	(&testVmCtx{
+		t:       t,
+		ectx:    &ExecutionContext{Miner: addr},
+		asmCode: genSimpleCallCode(1),
+		contracts: []testContract{
+			{addr: AddressType{1, 2, 3}, code: genCmpAddrCode(SYSCALL_MINER, addr)},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-9 + vm.GasMemoryOp*8 + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_MINER],
+		expectedError:          nil,
+		origin:                 AddressType{4, 5, 6},
+	}).runInner()
 }
 
 func TestVMSyscallBlockNumber(t *testing.T) {
@@ -306,7 +446,7 @@ func TestVMSyscallBlockNumber(t *testing.T) {
 	val := uint64(rnd.Int63())
 	(&testVmCtx{
 		t:       t,
-		ecxt:    &ExecutionContext{Height: int(val)},
+		ectx:    &ExecutionContext{Height: int(val)},
 		asmCode: genSimpleCallCode(1),
 		contracts: []testContract{
 			{addr: AddressType{1, 2, 3}, code: genCmpIntCode(SYSCALL_BLOCK_NUMBER, val)},
@@ -318,9 +458,20 @@ func TestVMSyscallBlockNumber(t *testing.T) {
 }
 
 func TestVMSyscallDifficulty(t *testing.T) {
-	// todo (soon)
 	rnd := rand.New(rand.NewSource(114528))
-	_ = rnd
+	var addr AddressType
+	rnd.Read(addr[:])
+	(&testVmCtx{
+		t:       t,
+		ectx:    &ExecutionContext{Difficulty: HashType(addr)},
+		asmCode: genSimpleCallCode(1),
+		contracts: []testContract{
+			{addr: AddressType{1, 2, 3}, code: genCmpAddrCode(SYSCALL_DIFFICULTY, addr)},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-9 + vm.GasMemoryOp*8 + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_DIFFICULTY],
+		expectedError:          nil,
+		origin:                 AddressType{4, 5, 6},
+	}).runInner()
 }
 
 func TestVMSyscallChainId(t *testing.T) {
@@ -330,7 +481,7 @@ func TestVMSyscallChainId(t *testing.T) {
 	val := uint64(rnd.Intn(10000))
 	(&testVmCtx{
 		t:       t,
-		ecxt:    &ExecutionContext{ChainId: uint16(val)},
+		ectx:    &ExecutionContext{ChainId: uint16(val)},
 		asmCode: genSimpleCallCode(1),
 		contracts: []testContract{
 			{addr: AddressType{1, 2, 3}, code: genCmpIntCode(SYSCALL_CHAINID, val)},
@@ -364,15 +515,80 @@ func TestVMSyscallGas(t *testing.T) {
 }
 
 func TestVMSyscallJumpDest(t *testing.T) {
-	// todo
+	// todo: need to be done after load contract
 	rnd := rand.New(rand.NewSource(114531))
 	_ = rnd
 }
 
 func TestVMSyscallTransfer(t *testing.T) {
-	// todo
+	genCode := func(addr AddressType, value uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, addr",
+			fmt.Sprintf("li a1, %d", value),
+			"la a2, addr",
+			"li a3, 8",
+			fmt.Sprintf("li t0, -%d", SYSCALL_TRANSFER*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv ra, s0",
+			"ret",
+			"addr:",
+			asAsmByteArr(addr[:]),
+			"msg:",
+			asAsmByteArr([]byte("testmsg!")),
+		}, "\n")
+	}
 	rnd := rand.New(rand.NewSource(114532))
-	_ = rnd
+	var addr AddressType
+	var addr2 AddressType
+	var addr3 AddressType
+	rnd.Read(addr[:])
+	rnd.Read(addr2[:])
+	rnd.Read(addr3[:])
+	s := storage.EmptySlice()
+	ai := GetAccountInfo(s, addr)
+	ai.Balance = 1145140000
+	SetAccountInfo(s, addr, ai)
+	(&testVmCtx{
+		t:                      t,
+		s:                      s,
+		asmCode:                genCode(addr2, 11451400),
+		expectedGasWithBaseLen: vm.GasInstructionBase*-10 + vm.GasMemoryPage + GasCall + GasSyscallBase[SYSCALL_TRANSFER] + 8,
+		expectedError:          nil,
+		origin:                 addr,
+	}).runInner()
+	ai = GetAccountInfo(s, addr)
+	if ai.Balance != 11451400*99 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	ai = GetAccountInfo(s, addr2)
+	if ai.Balance != 114514*100 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	(&testVmCtx{
+		t:       t,
+		s:       s,
+		asmCode: genSimpleCallCode(1),
+		contracts: []testContract{
+			{addr: addr2, code: genCode(addr3, 114514)},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-10 + vm.GasMemoryPage*2 + GasCall*2 + GasSyscallBase[SYSCALL_TRANSFER] + 8,
+		expectedError:          nil,
+		origin:                 AddressType{4, 5, 6},
+	}).runInner()
+	ai = GetAccountInfo(s, addr)
+	if ai.Balance != 11451400*99 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	ai = GetAccountInfo(s, addr2)
+	if ai.Balance != 114514*99 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	ai = GetAccountInfo(s, addr3)
+	if ai.Balance != 114514 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
 }
 
 func TestVMSyscallCreate(t *testing.T) {
@@ -382,9 +598,49 @@ func TestVMSyscallCreate(t *testing.T) {
 }
 
 func TestVMSyscallEd25519Verify(t *testing.T) {
-	// todo
+	genCode := func(msg, pubkey, sig []byte, expected uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, msg",
+			fmt.Sprintf("li a1, %d", len(msg)),
+			"la a2, pubkey",
+			"la a3, sig",
+			fmt.Sprintf("li t0, -%d", SYSCALL_ED25519_VERIFY*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			fmt.Sprintf("li a1, %d", expected),
+			"bne a0, a1, _start-2048",
+			"mv ra, s0",
+			"ret",
+			"pubkey:",
+			asAsmByteArr(pubkey),
+			"sig:",
+			asAsmByteArr(sig),
+			"msg:",
+			asAsmByteArr(msg),
+		}, "\n")
+	}
+	const Len = 1535
 	rnd := rand.New(rand.NewSource(114534))
-	_ = rnd
+	pubkey, privkey, _ := ed25519.GenerateKey(rnd)
+	msg := make([]byte, Len)
+	rnd.Read(msg)
+	sig := ed25519.Sign(privkey, msg)
+	(&testVmCtx{
+		t:             t,
+		asmCode:       genCode(msg, pubkey, sig, 1),
+		expectedGas:   vm.GasInstructionBase*15 + vm.GasMemoryPage + GasCall + GasSyscallBase[SYSCALL_ED25519_VERIFY] + (Len+127)/128*GasSyscallEd25519PerBlock,
+		expectedError: nil,
+		origin:        AddressType{4, 5, 6},
+	}).runInner()
+	sig[3] = 5
+	(&testVmCtx{
+		t:             t,
+		asmCode:       genCode(msg, pubkey, sig, 0),
+		expectedGas:   vm.GasInstructionBase*15 + vm.GasMemoryPage + GasCall + GasSyscallBase[SYSCALL_ED25519_VERIFY] + (Len+127)/128*GasSyscallEd25519PerBlock,
+		expectedError: nil,
+		origin:        AddressType{4, 5, 6},
+	}).runInner()
 }
 
 func TestVMSyscallLoadELF(t *testing.T) {
