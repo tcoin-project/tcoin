@@ -418,7 +418,6 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		}
 		ctx.jumpDest[prog] = true
 	case SYSCALL_TRANSFER:
-		// todo: callback
 		addr := AddressType{}
 		err := mem.ReadBytes(prog, cpu.GetArg(0), addr[:], env)
 		if err != nil {
@@ -434,6 +433,9 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		targetInfo.Balance += value
 		SetAccountInfo(call.s, ctx.addr[prog], selfInfo)
 		SetAccountInfo(call.s, ctx.addr[prog], targetInfo)
+		if ctx.ctx.Callback != nil {
+			ctx.ctx.Callback.Transfer(call.s, ctx.addr[prog], addr, value, ctx.tx, ctx.ctx)
+		}
 	case SYSCALL_CREATE:
 		n := cpu.GetArg(2)
 		if n > MaxByteArrayLen {

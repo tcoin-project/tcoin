@@ -29,6 +29,7 @@ type vmCtx struct {
 	entry    [vm.MaxLoadedPrograms]uint32
 	jumpDest map[uint64]bool
 	origin   AddressType
+	tx       *Transaction
 }
 
 type callCtx struct {
@@ -42,7 +43,7 @@ type callCtx struct {
 	callType  int
 }
 
-func newVmCtx(ctx *ExecutionContext, origin AddressType) *vmCtx {
+func newVmCtx(ctx *ExecutionContext, origin AddressType, tx *Transaction) *vmCtx {
 	return &vmCtx{
 		ctx:      ctx,
 		mem:      &vm.Memory{},
@@ -50,6 +51,7 @@ func newVmCtx(ctx *ExecutionContext, origin AddressType) *vmCtx {
 		elfCache: make(map[AddressType][]byte),
 		jumpDest: make(map[uint64]bool),
 		origin:   origin,
+		tx:       tx,
 	}
 }
 
@@ -137,7 +139,7 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 	}
 }
 
-func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext) error {
+func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext, tx *Transaction) error {
 	// todo: fork s outside
 	const initPc = 0x10000000
 	if gasLimit < GasVmTxRawCode {
@@ -146,7 +148,7 @@ func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storag
 	env := &vm.ExecEnv{
 		Gas: gasLimit - GasVmTxRawCode,
 	}
-	vmCtx := newVmCtx(ctx, origin)
+	vmCtx := newVmCtx(ctx, origin, tx)
 	id, _, _ := vmCtx.newProgram(origin)
 	err := vmCtx.mem.Programs[id].LoadRawCode(data, initPc, env)
 	vmCtx.entry[id] = 0

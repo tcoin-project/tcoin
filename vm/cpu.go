@@ -13,7 +13,7 @@ type CPU struct {
 var ErrIllegalInstruction = errors.New("illegal instruction")
 var ErrInsufficientGas = errors.New("insufficient gas")
 var ErrDivision = errors.New("division error")
-var ErrUnalignedMemoryAccess = errors.New("unaliened memory access")
+var ErrUnalignedMemoryAccess = errors.New("unaligned memory access")
 
 func execStep(cpu *CPU, env *CPUExecEnv, insn uint32) (uint64, error) {
 	cpu.Reg[0] = 0

@@ -93,7 +93,7 @@ func TestBlockFeeExec(t *testing.T) {
 		Txs:   []*Transaction{tx},
 	}
 	blk.FillHash()
-	err := ExecuteBlock(blk, 1000000, s, nil)
+	err := ExecuteBlock(blk, 1000000, s, &ExecutionContext{})
 	if err != nil {
 		t.Fatal("failed to execute block")
 	}
