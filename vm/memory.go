@@ -35,7 +35,7 @@ func (m *Memory) Recycle() {
 
 func (m *Memory) Access(pcProg, ptr uint64, op int) (*uint64, bool) {
 	ptrProg := ptr >> 32
-	if pcProg > MaxLoadedPrograms || ptrProg > MaxLoadedPrograms {
+	if pcProg >= MaxLoadedPrograms || ptrProg >= MaxLoadedPrograms {
 		return nil, false
 	}
 	return m.Programs[ptrProg].Access(uint32(ptr), pcProg == ptrProg, op)
@@ -59,7 +59,7 @@ func (m *Memory) ReadBytes(pcProg, ptr uint64, res []byte, env *ExecEnv) error {
 		return nil
 	}
 	ptrProg := ptr >> 32
-	if pcProg > MaxLoadedPrograms || ptrProg > MaxLoadedPrograms {
+	if pcProg >= MaxLoadedPrograms || ptrProg >= MaxLoadedPrograms {
 		return ErrSegFault
 	}
 	isSelf := pcProg == ptrProg
@@ -118,7 +118,7 @@ func (m *Memory) WriteBytes(pcProg, ptr uint64, data []byte, env *ExecEnv) error
 		return nil
 	}
 	ptrProg := ptr >> 32
-	if pcProg > MaxLoadedPrograms || ptrProg > MaxLoadedPrograms {
+	if pcProg >= MaxLoadedPrograms || ptrProg >= MaxLoadedPrograms {
 		return ErrSegFault
 	}
 	isSelf := pcProg == ptrProg
@@ -176,7 +176,7 @@ func (m *Memory) ReadString(pcProg, ptr, maxLen uint64, env *ExecEnv) (string, e
 		return nil
 	}
 	ptrProg := ptr >> 32
-	if pcProg > MaxLoadedPrograms || ptrProg > MaxLoadedPrograms {
+	if pcProg >= MaxLoadedPrograms || ptrProg >= MaxLoadedPrograms {
 		return "", ErrSegFault
 	}
 	isSelf := pcProg == ptrProg

@@ -3,6 +3,7 @@ package block
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/mcfx/tcoin/storage"
 	"github.com/mcfx/tcoin/vm"
+	elfx "github.com/mcfx/tcoin/vm/elf"
 )
 
 func genSimpleCallCode(prog int) string {
@@ -184,6 +186,23 @@ func TestVMSyscallCaller(t *testing.T) {
 }
 
 func TestVMSyscallCallValue(t *testing.T) {
+	genPCallCode := func(value, gasLimit uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"li a0, 0x110000000",
+			"li a1, 0",
+			"li a2, 0",
+			fmt.Sprintf("li a3, %d", value),
+			fmt.Sprintf("li a4, %d", gasLimit),
+			"addi a5, sp, -8",
+			"addi a6, sp, -1200",
+			fmt.Sprintf("li t0, -%d", SYSCALL_PROTECTED_CALL*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv ra, s0",
+			"ret",
+		}, "\n")
+	}
 	rnd := rand.New(rand.NewSource(114517))
 	var addr AddressType
 	rnd.Read(addr[:])
@@ -194,7 +213,21 @@ func TestVMSyscallCallValue(t *testing.T) {
 		expectedError:          nil,
 		origin:                 addr,
 	}).runInner()
-	// todo: after test protected call
+	s := storage.EmptySlice()
+	ai := GetAccountInfo(s, addr)
+	ai.Balance = 1000000
+	SetAccountInfo(s, addr, ai)
+	(&testVmCtx{
+		t:       t,
+		s:       s,
+		asmCode: genPCallCode(12345, 100000),
+		contracts: []testContract{
+			{addr: AddressType{1, 2, 3}, code: genCmpIntCode(SYSCALL_CALLVALUE, 12345)},
+		},
+		expectedGasWithBaseLen: vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_CALLVALUE] + GasSyscallBase[SYSCALL_PROTECTED_CALL] + GasSyscallBase[SYSCALL_TRANSFER],
+		expectedError:          nil,
+		origin:                 addr,
+	}).runInner()
 }
 
 func TestVMSyscallStorageStoreLoad(t *testing.T) {
@@ -387,21 +420,252 @@ func TestVMSyscallBalance(t *testing.T) {
 }
 
 func TestVMSyscallLoadContract(t *testing.T) {
-	// todo (low priority)
+	genCode := func(addr AddressType, x, y uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, addr",
+			"li a1, 4096",
+			fmt.Sprintf("li t0, -%d", SYSCALL_LOAD_CONTRACT*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv t0, a0",
+			fmt.Sprintf("li a0, %d", x),
+			fmt.Sprintf("li a1, %d", y),
+			"jalr t0",
+			fmt.Sprintf("li a1, %d", x+y),
+			"bne a0, a1, _start-2048",
+			"mv ra, s0",
+			"ret",
+			"addr:",
+			asAsmByteArr(addr[:]),
+		}, "\n")
+	}
+	contractCode := strings.Join([]string{
+		".section .text",
+		".globl _start",
+		"_start:",
+		"la a0, real_start",
+		"mv s0, ra",
+		fmt.Sprintf("li t0, -%d", SYSCALL_JUMPDEST*8),
+		"srli t0, t0, 1",
+		"jalr t0",
+		"la a0, real_start",
+		"mv ra, s0",
+		"ret",
+		"real_start:",
+		"add a0, a0, a1",
+		"ret",
+	}, "\n")
 	rnd := rand.New(rand.NewSource(114522))
-	_ = rnd
+	var addr AddressType
+	rnd.Read(addr[:])
+	s := storage.EmptySlice()
+	elf := elfx.DebugBuildAsmELF(contractCode)
+	storeContractCode(s, addr, elf)
+	(&testVmCtx{
+		t:                      t,
+		s:                      s,
+		asmCode:                genCode(addr, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		expectedGasWithBaseLen: vm.GasInstructionBase*(12-8) + vm.GasMemoryPage*2 + GasCall*3 + GasSyscallBase[SYSCALL_LOAD_CONTRACT] + GasSyscallBase[SYSCALL_JUMPDEST] + GasLoadContractCode + uint64(len(elf)+31)/32*GasLoadContractCodePerBlock,
+		expectedError:          nil,
+		origin:                 AddressType{4, 5, 6},
+	}).runInner()
 }
 
 func TestVMSyscallProtectedCall(t *testing.T) {
-	// todo (low priority)
+	genCode := func(value, gasLimit, x, y uint64) string {
+		s := []string{
+			"mv s0, ra",
+			"li a0, 0x110000000",
+			fmt.Sprintf("li a1, %d", x),
+			fmt.Sprintf("li a2, %d", y),
+			fmt.Sprintf("li a3, %d", value),
+			fmt.Sprintf("li a4, %d", gasLimit),
+			"addi a5, sp, -8",
+			"addi a6, sp, -1200",
+			fmt.Sprintf("li t0, -%d", SYSCALL_PROTECTED_CALL*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+		}
+		if gasLimit < 50+GasCall {
+			s = append(s,
+				"lb a0, -8(sp)",
+				"bne a0, zero, _start-2048",
+			)
+		} else {
+			s = append(s,
+				"lb a1, -8(sp)",
+				"beq a1, zero, _start-2048",
+				fmt.Sprintf("li a1, %d", x^y),
+				"bne a0, a1, _start-2048",
+			)
+		}
+		s = append(s,
+			"mv ra, s0",
+			"ret",
+		)
+		return strings.Join(s, "\n")
+	}
 	rnd := rand.New(rand.NewSource(114523))
-	_ = rnd
+	contractCode := "xor a0, a0, a1; nop; nop; nop; ret"
+	(&testVmCtx{
+		t:       t,
+		asmCode: genCode(0, 1000, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		contracts: []testContract{
+			{addr: AddressType{6, 1}, code: contractCode},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-5 + vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall + GasSyscallBase[SYSCALL_PROTECTED_CALL],
+		expectedError:          nil,
+	}).runInner()
+	(&testVmCtx{
+		t:       t,
+		asmCode: genCode(0, 2830, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		contracts: []testContract{
+			{addr: AddressType{6, 1}, code: contractCode},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-2 + vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_PROTECTED_CALL],
+		expectedError:          nil,
+	}).runInner()
+	(&testVmCtx{
+		t:       t,
+		asmCode: genCode(0, 3500, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		contracts: []testContract{
+			{addr: AddressType{6, 1}, code: contractCode},
+		},
+		expectedGasWithBaseLen: vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_PROTECTED_CALL],
+		expectedError:          nil,
+	}).runInner()
+	var addr AddressType
+	var addr2 AddressType
+	rnd.Read(addr[:])
+	rnd.Read(addr2[:])
+	s := storage.EmptySlice()
+	ai := GetAccountInfo(s, addr)
+	ai.Balance = 100000
+	SetAccountInfo(s, addr, ai)
+	(&testVmCtx{
+		t:       t,
+		s:       s,
+		asmCode: genCode(10000, 3500, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		contracts: []testContract{
+			{addr: addr2, code: contractCode},
+		},
+		expectedGasWithBaseLen: vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_PROTECTED_CALL] + GasSyscallBase[SYSCALL_TRANSFER],
+		expectedError:          nil,
+		origin:                 addr,
+	}).runInner()
+	ai = GetAccountInfo(s, addr)
+	if ai.Balance != 90000 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	ai = GetAccountInfo(s, addr2)
+	if ai.Balance != 10000 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	(&testVmCtx{
+		t:       t,
+		s:       s,
+		asmCode: genCode(10000, 2500, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		contracts: []testContract{
+			{addr: addr2, code: contractCode},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-5 + vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall + GasSyscallBase[SYSCALL_PROTECTED_CALL] + GasSyscallBase[SYSCALL_TRANSFER],
+		expectedError:          nil,
+		origin:                 addr,
+	}).runInner()
+	ai = GetAccountInfo(s, addr)
+	if ai.Balance != 90000 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	ai = GetAccountInfo(s, addr2)
+	if ai.Balance != 10000 {
+		t.Fatalf("balance mismatch: %d", ai.Balance)
+	}
+	(&testVmCtx{
+		t:       t,
+		s:       s,
+		asmCode: genCode(100000, 2500, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		contracts: []testContract{
+			{addr: addr2, code: contractCode},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-(4+5) + vm.GasMemoryPage*2 + GasCall + GasSyscallBase[SYSCALL_PROTECTED_CALL] + GasSyscallBase[SYSCALL_TRANSFER],
+		expectedError:          ErrInsufficientBalance,
+		origin:                 addr,
+	}).runInner()
 }
 
 func TestVMSyscallRevert(t *testing.T) {
-	// todo (after protected call)
+	genCode := func(v []byte) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, str",
+			fmt.Sprintf("li t0, -%d", SYSCALL_REVERT*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv ra, s0",
+			"ret",
+			"str:",
+			asAsmByteArr(v),
+		}, "\n")
+	}
+	genCode2 := func(gasLimit uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"li a0, 0x110000000",
+			"li a3, 0",
+			fmt.Sprintf("li a4, %d", gasLimit),
+			"addi a5, sp, -8",
+			"addi a6, sp, -1200",
+			fmt.Sprintf("li t0, -%d", SYSCALL_PROTECTED_CALL*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"lb a0, -8(sp)",
+			"bne a0, zero, _start-2048",
+			"addi a0, sp, -1200",
+			fmt.Sprintf("li t0, -%d", SYSCALL_REVERT*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+		}, "\n")
+	}
 	rnd := rand.New(rand.NewSource(114524))
 	_ = rnd
+	(&testVmCtx{
+		t:                      t,
+		asmCode:                genCode(append([]byte("testtest123456"), 0, 1)),
+		expectedGasWithBaseLen: vm.GasInstructionBase*-(4+2) + vm.GasMemoryPage + GasCall + GasSyscallBase[SYSCALL_REVERT] + 14,
+		expectedError:          errors.New("reverted: testtest123456"),
+		origin:                 AddressType{1, 2, 3},
+	}).runInner()
+	(&testVmCtx{
+		t:       t,
+		asmCode: genSimpleCallCode(1),
+		contracts: []testContract{
+			{addr: AddressType{6, 1}, code: genCode(append([]byte("testtest123456"), 0, 1))},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-(4+2+2) + vm.GasMemoryPage*2 + GasCall*2 + GasSyscallBase[SYSCALL_REVERT] + 14,
+		expectedError:          errors.New("reverted: testtest123456"),
+		origin:                 AddressType{1, 2, 3},
+	}).runInner()
+	(&testVmCtx{
+		t:       t,
+		asmCode: genCode2(2820),
+		contracts: []testContract{
+			{addr: AddressType{6, 1}, code: genCode(append([]byte("testtest123456"), 0, 1))},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-(4+2+4) + vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_REVERT] + GasSyscallBase[SYSCALL_PROTECTED_CALL] + 16,
+		expectedError:          errors.New("reverted: insufficient gas"),
+		origin:                 AddressType{1, 2, 3},
+	}).runInner()
+	(&testVmCtx{
+		t:       t,
+		asmCode: genCode2(100000),
+		contracts: []testContract{
+			{addr: AddressType{6, 1}, code: genCode(append([]byte("testtest123456"), 0, 1))},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-(4+2) + vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_REVERT]*2 + GasSyscallBase[SYSCALL_PROTECTED_CALL] + 14 + 24,
+		expectedError:          errors.New("reverted: reverted: testtest123456"),
+		origin:                 AddressType{1, 2, 3},
+	}).runInner()
 }
 
 func TestVMSyscallTime(t *testing.T) {
@@ -493,6 +757,25 @@ func TestVMSyscallChainId(t *testing.T) {
 }
 
 func TestVMSyscallGas(t *testing.T) {
+	genPCallCode := func(value, gasLimit uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"li a0, 0x110000000",
+			"li a1, 0",
+			"li a2, 0",
+			fmt.Sprintf("li a3, %d", value),
+			fmt.Sprintf("li a4, %d", gasLimit),
+			"addi a5, sp, -8",
+			"addi a6, sp, -1200",
+			fmt.Sprintf("li t0, -%d", SYSCALL_PROTECTED_CALL*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"lb a0, -8(sp)",
+			"beq a0, zero, _start-2048",
+			"mv ra, s0",
+			"ret",
+		}, "\n")
+	}
 	const GasLimit = 1000000
 	rnd := rand.New(rand.NewSource(114530))
 	var addr AddressType
@@ -511,13 +794,20 @@ func TestVMSyscallGas(t *testing.T) {
 		expectedError:          nil,
 		origin:                 AddressType{4, 5, 6},
 	}).runInner()
-	// todo: test protected call?
-}
-
-func TestVMSyscallJumpDest(t *testing.T) {
-	// todo: need to be done after load contract
-	rnd := rand.New(rand.NewSource(114531))
-	_ = rnd
+	(&testVmCtx{
+		t:        t,
+		asmCode:  genPCallCode(0, 10000),
+		gasLimit: GasLimit,
+		contracts: []testContract{
+			{
+				addr: AddressType{1, 2, 3},
+				code: genCmpIntCode(SYSCALL_GAS, 10000-vm.GasInstructionBase*4-GasCall-GasSyscallBase[SYSCALL_GAS]),
+			},
+		},
+		expectedGasWithBaseLen: vm.GasMemoryOp + vm.GasMemoryPage*3 + GasCall*2 + GasSyscallBase[SYSCALL_GAS] + GasSyscallBase[SYSCALL_PROTECTED_CALL],
+		expectedError:          nil,
+		origin:                 AddressType{4, 5, 6},
+	}).runInner()
 }
 
 func TestVMSyscallTransfer(t *testing.T) {
@@ -589,6 +879,17 @@ func TestVMSyscallTransfer(t *testing.T) {
 	if ai.Balance != 114514 {
 		t.Fatalf("balance mismatch: %d", ai.Balance)
 	}
+	(&testVmCtx{
+		t:       t,
+		s:       s,
+		asmCode: genSimpleCallCode(1),
+		contracts: []testContract{
+			{addr: addr2, code: genCode(addr3, 11451400)},
+		},
+		expectedGasWithBaseLen: vm.GasInstructionBase*-14 + vm.GasMemoryPage*2 + GasCall*2 + GasSyscallBase[SYSCALL_TRANSFER],
+		expectedError:          ErrInsufficientBalance,
+		origin:                 AddressType{4, 5, 6},
+	}).runInner()
 }
 
 func TestVMSyscallCreate(t *testing.T) {
@@ -644,7 +945,101 @@ func TestVMSyscallEd25519Verify(t *testing.T) {
 }
 
 func TestVMSyscallLoadELF(t *testing.T) {
-	// todo
+	genCode := func(addr AddressType, x, y uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"la a0, addr",
+			"li a1, 4096",
+			fmt.Sprintf("li t0, -%d", SYSCALL_LOAD_ELF*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv t0, a0",
+			fmt.Sprintf("li a0, %d", x),
+			fmt.Sprintf("li a1, %d", y),
+			"jalr t0",
+			fmt.Sprintf("li a1, %d", x^y),
+			"bne a0, a1, _start-2048",
+			"mv ra, s0",
+			"ret",
+			"addr:",
+			asAsmByteArr(addr[:]),
+		}, "\n")
+	}
+	contractCode := "__attribute__((optimize(2))) long _start(long a, long b) { return a ^ b; }"
 	rnd := rand.New(rand.NewSource(114535))
-	_ = rnd
+	var addr AddressType
+	rnd.Read(addr[:])
+	s := storage.EmptySlice()
+	elf := elfx.DebugBuildELF(contractCode)
+	storeContractCode(s, addr, elf)
+	(&testVmCtx{
+		t:                      t,
+		s:                      s,
+		asmCode:                genCode(addr, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		expectedGasWithBaseLen: vm.GasInstructionBase*(2-8) + vm.GasMemoryPage*2 + GasCall + GasSyscallBase[SYSCALL_LOAD_ELF] + GasLoadContractCode + uint64(len(elf)+31)/32*GasLoadContractCodePerBlock,
+		expectedError:          nil,
+		origin:                 AddressType{4, 5, 6},
+		callType:               CallInit,
+	}).runInner()
+	genCode2 := func(addr AddressType, x, y uint64) string {
+		return strings.Join([]string{
+			"mv s1, ra",
+			"la a0, addr",
+			"li a1, 4096",
+			fmt.Sprintf("li t0, -%d", SYSCALL_LOAD_CONTRACT*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv t0, a0",
+			fmt.Sprintf("li a0, %d", x),
+			fmt.Sprintf("li a1, %d", y),
+			"jalr t0",
+			fmt.Sprintf("li a1, %d", x-y),
+			"bne a0, a1, _start-2048",
+			"la a0, addr",
+			"li a1, 4096",
+			fmt.Sprintf("li t0, -%d", SYSCALL_LOAD_ELF*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"jalr a0",
+			"mv t0, a0",
+			fmt.Sprintf("li a0, %d", x),
+			fmt.Sprintf("li a1, %d", y),
+			"jalr t0",
+			fmt.Sprintf("li a1, %d", x-y),
+			"bne a0, a1, _start-2048",
+			"mv ra, s1",
+			"ret",
+			"addr:",
+			asAsmByteArr(addr[:]),
+		}, "\n")
+	}
+	contractCode2 := strings.Join([]string{
+		".section .text",
+		".globl _start",
+		"_start:",
+		"la a0, real_start",
+		"mv s0, ra",
+		fmt.Sprintf("li t0, -%d", SYSCALL_JUMPDEST*8),
+		"srli t0, t0, 1",
+		"jalr t0",
+		"la a0, real_start",
+		"mv ra, s0",
+		"ret",
+		"real_start:",
+		"sub a0, a0, a1",
+		"ret",
+	}, "\n")
+	rnd.Read(addr[:])
+	s = storage.EmptySlice()
+	elf = elfx.DebugBuildAsmELF(contractCode2)
+	storeContractCode(s, addr, elf)
+	(&testVmCtx{
+		t:                      t,
+		s:                      s,
+		asmCode:                genCode2(addr, uint64(rnd.Int63()), uint64(rnd.Int63())),
+		expectedGasWithBaseLen: vm.GasInstructionBase*(12*2-8) + vm.GasMemoryPage*3 + GasCall*3 + GasSyscallBase[SYSCALL_LOAD_CONTRACT] + GasSyscallBase[SYSCALL_LOAD_ELF] + GasSyscallBase[SYSCALL_JUMPDEST]*2 + GasLoadContractCodeCached + GasLoadContractCode + uint64(len(elf)+31)/32*GasLoadContractCodePerBlock,
+		expectedError:          nil,
+		origin:                 AddressType{1, 2, 3},
+		callType:               CallInit,
+	}).runInner()
 }

@@ -60,7 +60,7 @@ var GasSyscallBase = map[int]uint64{
 	SYSCALL_SHA256:         400,
 	SYSCALL_BALANCE:        20000,
 	SYSCALL_LOAD_CONTRACT:  500,
-	SYSCALL_PROTECTED_CALL: GasCall + 1000,
+	SYSCALL_PROTECTED_CALL: 1000,
 	SYSCALL_REVERT:         500,
 	SYSCALL_TIME:           40,
 	SYSCALL_MINER:          40,
@@ -355,6 +355,28 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		callValue := cpu.GetArg(3)
 		gasLimit := cpu.GetArg(4)
 		newS := storage.ForkSlice(call.s)
+		callProg := callPc >> 32
+		if callProg >= vm.MaxLoadedPrograms {
+			return ErrIllegalSyscallParameters
+		}
+		if callValue != 0 {
+			if env.Gas < GasSyscallBase[SYSCALL_TRANSFER] {
+				return vm.ErrInsufficientGas
+			}
+			env.Gas -= GasSyscallBase[SYSCALL_TRANSFER]
+			selfInfo := GetAccountInfo(newS, ctx.addr[prog])
+			if selfInfo.Balance < callValue {
+				return ErrInsufficientBalance
+			}
+			targetInfo := GetAccountInfo(newS, ctx.addr[callProg])
+			selfInfo.Balance -= callValue
+			targetInfo.Balance += callValue
+			SetAccountInfo(newS, ctx.addr[prog], selfInfo)
+			SetAccountInfo(newS, ctx.addr[callProg], targetInfo)
+		}
+		if ctx.ctx.Callback != nil {
+			ctx.ctx.Callback.Transfer(newS, ctx.addr[prog], ctx.addr[callProg], callValue, nil, ctx.tx, ctx.ctx)
+		}
 		if gasLimit > env.Gas {
 			gasLimit = env.Gas
 		}
@@ -381,6 +403,11 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 				return err2
 			}
 		} else {
+			err2 := mem.WriteBytes(prog, cpu.GetArg(5), []byte{1}, env)
+			if err2 != nil {
+				return err2
+			}
+			newS.Merge()
 			cpu.SetArg(0, res)
 		}
 	case SYSCALL_REVERT:
@@ -417,7 +444,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		if prog != (target >> 32) {
 			return ErrIllegalSyscallParameters
 		}
-		ctx.jumpDest[prog] = true
+		ctx.jumpDest[target] = true
 	case SYSCALL_TRANSFER:
 		addr := AddressType{}
 		err := mem.ReadBytes(prog, cpu.GetArg(0), addr[:], env)
@@ -475,6 +502,8 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 			key[64] = 2
 			val := call.s.Read(key)
 			nonce = binary.LittleEndian.Uint64(val[:8])
+			binary.LittleEndian.PutUint64(val[:8], nonce+1)
+			call.s.Write(key, val)
 		}
 		addr, err := ctx.create(call, buf, flags, nonce)
 		if err != nil {

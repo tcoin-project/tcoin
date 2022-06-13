@@ -76,7 +76,7 @@ func (ctx *vmCtx) isValidJumpDest(addr uint64) bool {
 func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 	const RetAddr = 0xdeadbeef00000000
 	call.prog = call.pc >> 32
-	if call.prog > vm.MaxLoadedPrograms {
+	if call.prog >= vm.MaxLoadedPrograms {
 		return 0, vm.ErrIllegalPc
 	}
 	env := call.env

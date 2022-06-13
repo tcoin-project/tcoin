@@ -10,15 +10,20 @@ func debugBuildELFWithFilename(source, filename, binname string) []byte {
 	if err != nil {
 		panic(err)
 	}
-	cmd := exec.Command("riscv64-elf-gcc", filename, "-o", binname,
+	args := []string{
+		filename, "-o", binname,
 		"-nostdlib", "-nodefaultlibs", "-fno-builtin",
 		"-march=rv64im", "-mabi=lp64",
-		"-Wl,--gc-sections", "-fPIE", "-s",
+		"-Wl,--gc-sections", "-s",
 		"-Ttext", "0x10000190",
 		"-Wl,--section-start,.private_data=0x20000000",
 		"-Wl,--section-start,.shared_data=0x40000000",
 		"-Wl,--section-start,.init_code=0x100FF000",
-	)
+	}
+	if filename[len(filename)-1] == 'c' {
+		args = append(args, "-fPIE")
+	}
+	cmd := exec.Command("riscv64-elf-gcc", args...)
 	err = cmd.Run()
 	if err != nil {
 		panic(err)
@@ -35,5 +40,5 @@ func DebugBuildELF(source string) []byte {
 }
 
 func DebugBuildAsmELF(source string) []byte {
-	return debugBuildELFWithFilename(source, "/tmp/2a.s", "/tmp/2a")
+	return debugBuildELFWithFilename(source, "/tmp/2a.S", "/tmp/2a")
 }

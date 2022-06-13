@@ -25,6 +25,7 @@ type testVmCtx struct {
 	expectedError          error
 	expectedGas            uint64
 	expectedGasWithBaseLen uint64
+	callType               int
 }
 
 func asAsmByteArr(s []byte) string {
@@ -88,6 +89,9 @@ func (t *testVmCtx) runInner() {
 			Callback:   nil,
 		}
 	}
+	if t.callType == 0 {
+		t.callType = CallExternal
+	}
 	env := &vm.ExecEnv{
 		Gas: t.gasLimit,
 	}
@@ -126,10 +130,10 @@ func (t *testVmCtx) runInner() {
 		callValue: 0,
 		args:      nil,
 		caller:    id,
-		callType:  CallExternal,
+		callType:  t.callType,
 	})
 	vmCtx.mem.Recycle()
-	if err != t.expectedError {
+	if err != t.expectedError && (err == nil || t.expectedError == nil || err.Error() != t.expectedError.Error()) {
 		t.t.Fatalf("unexpected error: %v != %v", err, t.expectedError)
 	}
 	if t.expectedGasWithBaseLen != 0 {
