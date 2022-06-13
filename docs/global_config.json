@@ -219,5 +219,6 @@
     "block_reward": 1000000000,
     "seed_nodes": [
         "207.148.91.91:36879"
-    ]
+    ],
+    "tip1_enable_height": 220000
 }

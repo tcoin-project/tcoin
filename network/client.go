@@ -68,11 +68,15 @@ func NewClient(config *ClientConfig, ccp chan ClientPacket, networkId uint16) (*
 			return nil, fmt.Errorf("error when creating network client: %v", err)
 		}
 	}
-	c.ln, err = reuseport.Listen("tcp", ":"+strconv.Itoa(c.config.Port))
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen port %d: %v", c.config.Port, err)
+	if c.config.Port != -1 {
+		c.ln, err = reuseport.Listen("tcp", ":"+strconv.Itoa(c.config.Port))
+		if err != nil {
+			return nil, fmt.Errorf("failed to listen port %d: %v", c.config.Port, err)
+		}
+		go c.listen()
+	} else {
+		c.stopped <- true
 	}
-	go c.listen()
 	for i := 0; i < 4; i++ {
 		go c.readLoop()
 	}
@@ -103,7 +107,9 @@ func (c *Client) istop() {
 	for i := 0; i < 5; i++ {
 		c.stop <- true
 	}
-	c.ln.Close()
+	if c.ln != nil {
+		c.ln.Close()
+	}
 	c.stopped <- true
 	c.peersMut.Lock()
 	for _, v := range c.peers {

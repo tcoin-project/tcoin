@@ -600,11 +600,11 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 	// todo: sort by gas price
 	txPool := cn.txPool.Items()
 	cn.seMut.Lock()
-	defer cn.seMut.Unlock()
 	sl := storage.ForkSlice(cn.se.HighestSlice)
 	b := &block.Block{}
 	ls := cn.se.HighestChain[len(cn.se.HighestChain)-1]
 	b.Header.ParentHash = block.HashType(ls.Key)
+	cn.seMut.Unlock()
 	cs, _ := cn.getConsensusState(ls.S.Height(), b.Header.ParentHash)
 	b.Miner = miner
 	b.Time = uint64(time.Now().UnixNano())
