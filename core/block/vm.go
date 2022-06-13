@@ -140,7 +140,6 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 }
 
 func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext, tx *Transaction) error {
-	// todo: fork s outside
 	const initPc = 0x10000000
 	if gasLimit < GasVmTxRawCode {
 		return vm.ErrInsufficientGas

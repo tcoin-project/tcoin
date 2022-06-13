@@ -20,4 +20,5 @@ type ChainGlobalConfig struct {
 	GenesisBlockReward    uint64                    `json:"genesis_block_reward"`
 	BlockReward           uint64                    `json:"block_reward"`
 	SeedNodes             []string                  `json:"seed_nodes"`
+	Tip1EnableHeight      int                       `json:"tip1_enable_height"`
 }

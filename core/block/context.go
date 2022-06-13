@@ -8,10 +8,11 @@ type ExecutionCallback struct {
 }
 
 type ExecutionContext struct {
-	Height     int
-	Time       uint64
-	Miner      AddressType
-	Difficulty HashType
-	ChainId    uint16
-	Callback   *ExecutionCallback
+	Height      int
+	Time        uint64
+	Miner       AddressType
+	Difficulty  HashType
+	ChainId     uint16
+	Tip1Enabled bool
+	Callback    *ExecutionCallback
 }

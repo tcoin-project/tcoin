@@ -10,6 +10,7 @@ import (
 
 	"github.com/mcfx/tcoin/storage"
 	"github.com/mcfx/tcoin/utils"
+	"github.com/mcfx/tcoin/vm"
 )
 
 type Transaction struct {
@@ -29,7 +30,7 @@ func DecodeTx(r utils.Reader) (*Transaction, error) {
 	tx := &Transaction{}
 	tx.TxType, err = r.ReadByte()
 	if err != nil {
-		return tx, err
+		return nil, err
 	}
 	_, err = io.ReadFull(r, tx.SenderPubkey[:])
 	if err != nil {
@@ -39,13 +40,15 @@ func DecodeTx(r utils.Reader) (*Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = io.ReadFull(r, tx.Receiver[:])
-	if err != nil {
-		return nil, err
-	}
-	tx.Value, err = binary.ReadUvarint(r)
-	if err != nil {
-		return nil, err
+	if tx.TxType == 1 {
+		_, err = io.ReadFull(r, tx.Receiver[:])
+		if err != nil {
+			return nil, err
+		}
+		tx.Value, err = binary.ReadUvarint(r)
+		if err != nil {
+			return nil, err
+		}
 	}
 	tx.GasLimit, err = binary.ReadUvarint(r)
 	if err != nil {
@@ -87,13 +90,15 @@ func EncodeTx(w utils.Writer, tx *Transaction) error {
 	if err != nil {
 		return err
 	}
-	_, err = w.Write(tx.Receiver[:])
-	if err != nil {
-		return err
-	}
 	buf := make([]byte, binary.MaxVarintLen64*5)
 	cur := 0
-	cur += binary.PutUvarint(buf[cur:], tx.Value)
+	if tx.TxType == 1 {
+		_, err = w.Write(tx.Receiver[:])
+		if err != nil {
+			return err
+		}
+		cur += binary.PutUvarint(buf[cur:], tx.Value)
+	}
 	cur += binary.PutUvarint(buf[cur:], tx.GasLimit)
 	cur += binary.PutUvarint(buf[cur:], tx.Fee)
 	cur += binary.PutUvarint(buf[cur:], tx.Nonce)
@@ -116,12 +121,18 @@ func (tx *Transaction) Hash() HashType {
 }
 
 func (tx *Transaction) prepareSignData() []byte {
-	sbuf := make([]byte, AddressLen+8*4)
+	sbuf := make([]byte, AddressLen+8*5)
 	copy(sbuf[:AddressLen], tx.Receiver[:])
 	binary.BigEndian.PutUint64(sbuf[AddressLen:AddressLen+8], tx.Value)
 	binary.BigEndian.PutUint64(sbuf[AddressLen+8:AddressLen+16], tx.GasLimit)
 	binary.BigEndian.PutUint64(sbuf[AddressLen+16:AddressLen+24], tx.Fee)
-	binary.BigEndian.PutUint64(sbuf[AddressLen+24:AddressLen+32], tx.Nonce)
+	if tx.TxType == 1 {
+		binary.BigEndian.PutUint64(sbuf[AddressLen+24:AddressLen+32], tx.Nonce)
+		sbuf = sbuf[:AddressLen+8*4]
+	} else {
+		binary.BigEndian.PutUint64(sbuf[AddressLen+24:AddressLen+32], ^uint64(0)-uint64(tx.TxType))
+		binary.BigEndian.PutUint64(sbuf[AddressLen+32:AddressLen+40], tx.Nonce)
+	}
 	return append(sbuf, tx.Data...)
 }
 
@@ -131,7 +142,10 @@ func (tx *Transaction) Sign(privKey PrivkeyType) {
 }
 
 func ExecuteTx(tx *Transaction, s *storage.Slice, ctx *ExecutionContext) error {
-	if tx.TxType != 1 {
+	if tx.TxType != 1 && tx.TxType != 2 {
+		return errors.New("wrong tx type")
+	}
+	if tx.TxType == 2 && !ctx.Tip1Enabled {
 		return errors.New("wrong tx type")
 	}
 	sbuf := tx.prepareSignData()
@@ -150,15 +164,26 @@ func ExecuteTx(tx *Transaction, s *storage.Slice, ctx *ExecutionContext) error {
 	if senderAccount.Nonce != tx.Nonce {
 		return errors.New("nonce mismatch")
 	}
-	// todo: smart contracts
+	if tx.TxType == 1 && ctx.Tip1Enabled && tx.GasLimit < GasSyscallBase[SYSCALL_TRANSFER] {
+		return vm.ErrInsufficientGas
+	}
 	senderAccount.Balance -= totalValue
 	senderAccount.Nonce++
 	SetAccountInfo(s, senderAddr, senderAccount)
-	receiverAccount := GetAccountInfo(s, tx.Receiver)
-	receiverAccount.Balance += tx.Value
-	SetAccountInfo(s, tx.Receiver, receiverAccount)
-	if ctx.Callback != nil {
-		ctx.Callback.Transfer(s, senderAddr, tx.Receiver, tx.Value, tx.Data, tx, ctx)
+	switch tx.TxType {
+	case 1:
+		receiverAccount := GetAccountInfo(s, tx.Receiver)
+		receiverAccount.Balance += tx.Value
+		SetAccountInfo(s, tx.Receiver, receiverAccount)
+		if ctx.Callback != nil {
+			ctx.Callback.Transfer(s, senderAddr, tx.Receiver, tx.Value, tx.Data, tx, ctx)
+		}
+	case 2:
+		newS := storage.ForkSlice(s)
+		err := ExecVmTxRawCode(senderAddr, tx.GasLimit, tx.Data, newS, ctx, tx)
+		if err == nil {
+			newS.Merge()
+		}
 	}
 	return nil
 }

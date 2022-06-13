@@ -50,12 +50,13 @@ func NewChainNode(config ChainNodeConfig, gConfig ChainGlobalConfig, execCallbac
 	}
 	sl := storage.EmptySlice()
 	err := block.ExecuteBlock(gConfig.GenesisBlock, gConfig.GenesisBlockReward, sl, &block.ExecutionContext{
-		Height:     0,
-		Time:       gConfig.GenesisBlock.Time,
-		Miner:      gConfig.GenesisBlock.Miner,
-		Difficulty: gConfig.GenesisConsensusState.Difficulty,
-		ChainId:    gConfig.ChainId,
-		Callback:   execCallback,
+		Height:      0,
+		Time:        gConfig.GenesisBlock.Time,
+		Miner:       gConfig.GenesisBlock.Miner,
+		Difficulty:  gConfig.GenesisConsensusState.Difficulty,
+		ChainId:     gConfig.ChainId,
+		Callback:    execCallback,
+		Tip1Enabled: 0 >= gConfig.Tip1EnableHeight,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to init node: %v", err)
@@ -400,12 +401,13 @@ func (cn *ChainNode) checkUnresolvedBlocks() {
 			if ok {
 				sln := storage.ForkSlice(sl)
 				err := block.ExecuteBlock(b, cn.gConfig.BlockReward, sln, &block.ExecutionContext{
-					Height:     cs.Height,
-					Time:       b.Time,
-					Miner:      b.Miner,
-					Difficulty: oldCs.Difficulty,
-					ChainId:    cn.gConfig.ChainId,
-					Callback:   cn.execCallback,
+					Height:      cs.Height,
+					Time:        b.Time,
+					Miner:       b.Miner,
+					Difficulty:  oldCs.Difficulty,
+					ChainId:     cn.gConfig.ChainId,
+					Callback:    cn.execCallback,
+					Tip1Enabled: cs.Height >= cn.gConfig.Tip1EnableHeight,
 				})
 				if err == nil {
 					sln.Freeze()
@@ -610,13 +612,15 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 	for _, v := range txPool {
 		tx := v.Object.(*block.Transaction)
 		sl2 := storage.ForkSlice(sl)
+		h := cn.se.HighestSlice.Height() + 1
 		err := block.ExecuteTx(tx, sl2, &block.ExecutionContext{
-			Height:     cn.se.HighestSlice.Height() + 1,
-			Time:       b.Time,
-			Miner:      miner,
-			Difficulty: cs.Difficulty,
-			ChainId:    cn.gConfig.ChainId,
-			Callback:   cn.execCallback,
+			Height:      h,
+			Time:        b.Time,
+			Miner:       miner,
+			Difficulty:  cs.Difficulty,
+			ChainId:     cn.gConfig.ChainId,
+			Callback:    cn.execCallback,
+			Tip1Enabled: h >= cn.gConfig.Tip1EnableHeight,
 		})
 		if err == nil {
 			sl2.Merge()
