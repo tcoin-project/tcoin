@@ -155,7 +155,7 @@ func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storag
 	if err != nil {
 		return err
 	}
-	vmCtx.cpus[id].Reg[2] = DefaultSp
+	vmCtx.cpus[id].Reg[2] = (uint64(id) << 32) | DefaultSp
 	_, err = vmCtx.execVM(&callCtx{
 		s:         s,
 		env:       env,

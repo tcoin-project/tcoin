@@ -3,6 +3,7 @@ package block
 import (
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -893,9 +894,169 @@ func TestVMSyscallTransfer(t *testing.T) {
 }
 
 func TestVMSyscallCreate(t *testing.T) {
-	// todo (low priority)
+	genCreateCode := func(elf, addr []byte, flags, nonce uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"j p2",
+			"expected:",
+			asAsmByteArr(addr),
+			"p2:",
+			"addi a0, sp, -32",
+			"la a1, code",
+			fmt.Sprintf("li a2, %d", len(elf)),
+			fmt.Sprintf("li a3, %d", flags),
+			fmt.Sprintf("li a4, %d", nonce),
+			fmt.Sprintf("li t0, -%d", SYSCALL_CREATE*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"la a3, expected",
+			"ld a1, 0(a0)",
+			"ld a2, 0(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 8(a0)",
+			"ld a2, 8(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 16(a0)",
+			"ld a2, 16(a3)",
+			"bne a1, a2, _start-2048",
+			"ld a1, 24(a0)",
+			"ld a2, 24(a3)",
+			"bne a1, a2, _start-2048",
+			"mv ra, s0",
+			"ret",
+			"code:",
+			asAsmByteArr(elf),
+			asAsmByteArr([]byte{1, 2, 3, 4}),
+		}, "\n")
+	}
+	genTestCode := func(addr []byte, x, y uint64) string {
+		return strings.Join([]string{
+			"mv s0, ra",
+			"j p2",
+			"addr:",
+			asAsmByteArr(addr),
+			"p2:",
+			"la a0, addr",
+			fmt.Sprintf("li t0, -%d", SYSCALL_LOAD_CONTRACT*8),
+			"srli t0, t0, 1",
+			"jalr t0",
+			"mv t0, a0",
+			fmt.Sprintf("li a0, %d", x),
+			fmt.Sprintf("li a1, %d", y),
+			"jalr t0",
+			fmt.Sprintf("li a1, %d", x^y),
+			"bne a0, a1, _start-2048",
+			"mv ra, s0",
+			"ret",
+		}, "\n")
+	}
+	getAddr := func(addr AddressType, flags, nonce uint64, elf []byte) []byte {
+		s := make([]byte, AddressLen+16)
+		copy(s[:AddressLen], addr[:])
+		binary.LittleEndian.PutUint64(s[AddressLen:AddressLen+8], flags)
+		binary.LittleEndian.PutUint64(s[AddressLen+8:AddressLen+16], nonce)
+		s = append(s, elf...)
+		t := sha256.Sum256(s)
+		return t[:]
+	}
+	contractCode := strings.Join([]string{
+		".section .text",
+		".globl _start",
+		"_start:",
+		"la a0, real_start",
+		"mv s0, ra",
+		fmt.Sprintf("li t0, -%d", SYSCALL_JUMPDEST*8),
+		"srli t0, t0, 1",
+		"jalr t0",
+		"la a0, real_start",
+		"mv ra, s0",
+		"ret",
+		"real_start:",
+		"xor a0, a0, a1",
+		"ret",
+	}, "\n")
+	contractCode2 := "long start3(long a, long b) { return a^b; }" +
+		fmt.Sprintf("void *start2() { void (*call)(void*) = (-%dull)>>1; call(start3); return start3; }", SYSCALL_JUMPDEST*8) +
+		"__attribute__((section(\".init_code\"))) void *_start() { return start2; }"
+	elf := elfx.DebugBuildAsmELF(contractCode)
+	elf2 := elfx.DebugBuildELF(contractCode2)
+	e, err := elfx.ParseELF(elf)
+	if err != nil {
+		t.Fatalf("error happened: %v", err)
+	}
+	elfs, err := elfx.TrimELF(elf, e, nil, uint64(e.Entry))
+	if err != nil {
+		t.Fatalf("error happened: %v", err)
+	}
 	rnd := rand.New(rand.NewSource(114533))
-	_ = rnd
+	var addr AddressType
+	rnd.Read(addr[:])
+	s := storage.EmptySlice()
+	addrs := [][]byte{}
+	for i := 0; i < 5; i++ {
+		x := uint64(i)
+		var y uint64 = 0
+		var f uint64 = 0
+		if i >= 3 {
+			x = uint64(rnd.Int63())
+			y = x
+			f = CREATE_USENONCE
+		}
+		addrs = append(addrs, getAddr(addr, f, x, elf))
+		(&testVmCtx{
+			t:       t,
+			s:       s,
+			asmCode: genCreateCode(elf, addrs[len(addrs)-1], f, y),
+			expectedGasWithBaseLen: vm.GasInstructionBase*-(9+uint64(len(elf))/4) +
+				vm.GasMemoryOp*8 +
+				vm.GasMemoryPage*2 +
+				GasCall +
+				GasSyscallBase[SYSCALL_CREATE] +
+				uint64(len(elf)) +
+				(uint64(len(elf))+31)/32*GasSyscallCreateStorePerBlock,
+			expectedError: nil,
+			origin:        addr,
+		}).runInner()
+	}
+	addrs = append(addrs, getAddr(addr, CREATE_TRIMELF, 3, elf))
+	(&testVmCtx{
+		t:       t,
+		s:       s,
+		asmCode: genCreateCode(elf, addrs[len(addrs)-1], CREATE_TRIMELF, 0),
+		expectedGasWithBaseLen: vm.GasInstructionBase*-(9+uint64(len(elf))/4) +
+			vm.GasMemoryOp*8 +
+			vm.GasMemoryPage*2 +
+			GasCall +
+			GasSyscallBase[SYSCALL_CREATE] +
+			uint64(len(elf)) +
+			(uint64(len(elfs))+31)/32*GasSyscallCreateStorePerBlock,
+		expectedError: nil,
+		origin:        addr,
+	}).runInner()
+	(&testVmCtx{
+		t:             t,
+		s:             s,
+		asmCode:       genCreateCode(elf2, getAddr(addr, CREATE_INIT, 4, elf2), CREATE_INIT, 0),
+		expectedError: nil,
+		origin:        addr,
+	}).runInner()
+	addrs = append(addrs, getAddr(addr, CREATE_INIT|CREATE_TRIMELF, 5, elf2))
+	(&testVmCtx{
+		t:             t,
+		s:             s,
+		asmCode:       genCreateCode(elf2, addrs[len(addrs)-1], CREATE_INIT|CREATE_TRIMELF, 0),
+		expectedError: nil,
+		origin:        addr,
+	}).runInner()
+	for _, x := range addrs {
+		(&testVmCtx{
+			t:             t,
+			s:             s,
+			asmCode:       genTestCode(x, uint64(rand.Int63()), uint64(rand.Int63())),
+			expectedError: nil,
+			origin:        addr,
+		}).runInner()
+	}
 }
 
 func TestVMSyscallEd25519Verify(t *testing.T) {

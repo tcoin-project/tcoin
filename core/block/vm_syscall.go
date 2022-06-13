@@ -155,6 +155,7 @@ func (ctx *vmCtx) create(call *callCtx, elf []byte, flags, nonce uint64) (Addres
 	mem := ctx.mem
 	h := sha256.New()
 	buf := make([]byte, 8)
+	h.Write(ctx.addr[call.prog][:])
 	binary.LittleEndian.PutUint64(buf, flags)
 	h.Write(buf)
 	binary.LittleEndian.PutUint64(buf, nonce)
@@ -184,7 +185,7 @@ func (ctx *vmCtx) create(call *callCtx, elf []byte, flags, nonce uint64) (Addres
 		if err != nil {
 			return addr, err
 		}
-		ctx.cpus[id].Reg[2] = DefaultSp
+		ctx.cpus[id].Reg[2] = (uint64(id) << 32) | DefaultSp
 		tEntry, err := ctx.execVM(&callCtx{
 			s:         call.s,
 			env:       env,
@@ -200,6 +201,7 @@ func (ctx *vmCtx) create(call *callCtx, elf []byte, flags, nonce uint64) (Addres
 		if int(tEntry>>32) != id {
 			return addr, ErrIllegalEntry
 		}
+		newEntry = uint32(tEntry)
 	}
 	if (flags & CREATE_TRIMELF) != 0 {
 		e, err := elfx.ParseELF(elf)
@@ -331,7 +333,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 			if err != nil {
 				return err
 			}
-			ctx.cpus[id].Reg[2] = DefaultSp
+			ctx.cpus[id].Reg[2] = (uint64(id) << 32) | DefaultSp
 			res, err := ctx.execVM(&callCtx{
 				s:         call.s,
 				env:       env,
