@@ -1,10 +1,13 @@
 package vm
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io/ioutil"
 	"os/exec"
+	"strconv"
+	"strings"
 )
 
 func SignExtend32(x uint32) uint64 {
@@ -72,6 +75,200 @@ func checkFunct7(x uint32) {
 	}
 }
 
+type laterInsn struct {
+	op   string
+	args []string
+}
+
+func BuiltinAsmToBytes(asm string) []byte {
+	word := func(x string) uint32 {
+		r, err := strconv.Atoi(x)
+		if err != nil {
+			panic(err)
+		}
+		return uint32(r)
+	}
+	reg := func(x string) uint32 {
+		switch x {
+		case "zero":
+			return 0
+		case "ra":
+			return 1
+		case "sp":
+			return 2
+		case "gp":
+			return 3
+		case "tp":
+			return 4
+		case "fp":
+			return 8
+		}
+		if x[0] == 'x' {
+			return word(x[1:])
+		}
+		if x[0] == 'a' {
+			return 10 + word(x[1:])
+		}
+		if x[0] == 't' {
+			t := word(x[1:])
+			if t < 3 {
+				return 5 + t
+			}
+			return 25 + t
+		}
+		if x[0] == 's' {
+			t := word(x[1:])
+			if t < 2 {
+				return 8 + t
+			}
+			return 16 + t
+		}
+		panic(fmt.Sprintf("unknown register: %s", x))
+	}
+	parseMem := func(x string) (int32, uint32) {
+		if x[len(x)-1] != ')' {
+			panic(fmt.Sprintf("unknown memory: %s", x))
+		}
+		t := strings.Split(x[:len(x)-1], "(")
+		if len(t) != 2 {
+			panic(fmt.Sprintf("unknown memory: %s", x))
+		}
+		return int32(word(t[0])), reg(t[1])
+	}
+	rest := []uint32{}
+	tbuf := []byte{}
+	labels := map[string]int{}
+	later := map[int]laterInsn{}
+	for _, line := range strings.Split("_start:\n"+asm, "\n") {
+		t := strings.Trim(line, " ")
+		if len(t) == 0 {
+			continue
+		}
+		if t[len(t)-1] == ':' {
+			labels[t[:len(t)-1]] = len(rest)
+			continue
+		}
+		if t[0] == '.' {
+			if t[1:6] != "byte " {
+				panic("only supports .byte")
+			}
+			tbuf = append(tbuf, byte(word(t[6:])))
+			if len(tbuf) == 4 {
+				rest = append(rest, binary.LittleEndian.Uint32(tbuf))
+				tbuf = []byte{}
+			}
+			continue
+		}
+		if len(tbuf) != 0 {
+			panic("insn not aligned to 4")
+		}
+		var op string
+		args := []string{}
+		if strings.Contains(line, " ") {
+			t2 := strings.SplitN(line, " ", 2)
+			op = t2[0]
+			for _, k := range strings.Split(t2[1], ",") {
+				args = append(args, strings.Trim(k, " "))
+			}
+		} else {
+			op = line
+		}
+		lin := laterInsn{
+			op:   op,
+			args: args,
+		}
+		switch op {
+		case "mv":
+			rest = append(rest, genIType(0b0010011, reg(args[0]), 0b000, reg(args[1]), 0))
+		case "la":
+			later[len(rest)] = lin
+			rest = append(rest, 0, 0)
+		case "li":
+			rd := reg(args[0])
+			v, err := strconv.Atoi(args[1])
+			if err != nil {
+				panic(err)
+			}
+			if v < 2048 && v >= -2048 {
+				rest = append(rest, genIType(0b0010011, rd, 0b000, 0, int32(v)))
+			} else if v < (1<<31) && v >= -(1<<31) {
+				u := v & 0xfff
+				if u >= 2048 {
+					u -= 4096
+				}
+				v2 := v - u
+				rest = append(rest, genUType(0b0110111, rd, int32(v2)))
+				if u != 0 {
+					rest = append(rest, genIType(0b0011011, rd, 0b000, rd, int32(u)))
+				}
+			} else {
+				panic(fmt.Sprintf("li %d not implemented", v))
+			}
+		case "srli":
+			rest = append(rest, genIType(0b0010011, reg(args[0]), 0b101, reg(args[1]), int32(word(args[2]))))
+		case "jalr":
+			var rd, rs1 uint32
+			if len(args) == 1 {
+				rd = 1
+				rs1 = reg(args[0])
+			} else {
+				rd = reg(args[0])
+				rs1 = reg(args[1])
+			}
+			rest = append(rest, genIType(0b1100111, rd, 0b000, rs1, 0))
+		case "j":
+			later[len(rest)] = lin
+			rest = append(rest, 0)
+		case "beq":
+			later[len(rest)] = lin
+			rest = append(rest, 0)
+		case "ret":
+			rest = append(rest, genIType(0b1100111, 0, 0b000, 1, 0))
+		case "addi":
+			rest = append(rest, genIType(0b0010011, reg(args[0]), 0b000, reg(args[1]), int32(word(args[2]))))
+		case "sub":
+			rest = append(rest, genRType(0b0110011, reg(args[0]), 0b000, reg(args[1]), reg(args[2]), 0b0100000))
+		case "lb":
+			offset, rs1 := parseMem(args[1])
+			rest = append(rest, genIType(0b0000011, reg(args[0]), 0b000, rs1, offset))
+		case "sb":
+			offset, rs1 := parseMem(args[1])
+			rest = append(rest, genSType(0b0100011, 0b000, rs1, reg(args[0]), offset))
+		case "sd":
+			offset, rs1 := parseMem(args[1])
+			rest = append(rest, genSType(0b0100011, 0b011, rs1, reg(args[0]), offset))
+		default:
+			panic(fmt.Sprintf("%s not implemented", op))
+		}
+	}
+	for p, lin := range later {
+		_ = p
+		_ = lin
+		args := lin.args
+		switch lin.op {
+		case "la":
+			diff := (labels[args[1]] - p) * 4
+			rd := reg(args[0])
+			rest[p] = genUType(0b0010111, rd, 0)
+			rest[p+1] = genIType(0b0010011, rd, 0b000, rd, int32(diff))
+		case "j":
+			diff := (labels[args[0]] - p) * 4
+			rest[p] = genJType(0b1101111, 0, int32(diff))
+		case "beq":
+			diff := (labels[args[2]] - p) * 4
+			rest[p] = genBType(0b1100011, 0b000, reg(args[0]), reg(args[1]), int32(diff))
+		default:
+			panic(fmt.Sprintf("%s not implemented in phase 2", lin.op))
+		}
+	}
+	var buf bytes.Buffer
+	err := binary.Write(&buf, binary.LittleEndian, rest)
+	if err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
 func genRType(opcode, rd, funct3, rs1, rs2, funct7 uint32) uint32 {
 	checkOpcode(opcode)
 	checkReg(rd)
@@ -130,7 +327,7 @@ func genUType(opcode, rd uint32, imm int32) uint32 {
 	checkOpcode(opcode)
 	checkReg(rd)
 	if imm%4096 != 0 {
-		panic(fmt.Sprintf("I-type imm error: %d", imm))
+		panic(fmt.Sprintf("U-type imm error: %d", imm))
 	}
 	immt := uint32(imm)
 	return opcode | rd<<7 | immt

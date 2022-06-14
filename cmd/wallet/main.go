@@ -98,8 +98,14 @@ func main() {
 		fmt.Printf("privkey: %x\n", ed25519.PrivateKey(priv[:]).Seed())
 		return
 	}
+	debugBuiltin := false
 	if len(os.Args) >= 3 {
 		rpcUrl = os.Args[2]
+	}
+	if len(os.Args) >= 4 {
+		if os.Args[3] == "debug" {
+			debugBuiltin = true
+		}
 	}
 	tmpb, err := hex.DecodeString(tmp)
 	if err != nil {
@@ -365,7 +371,15 @@ func main() {
 				"caddr:",
 				asAsmByteArr(caddr[:]),
 			)
-			code := vm.AsmToBytes(strings.Join(asm, "\n"))
+			code := vm.BuiltinAsmToBytes(strings.Join(asm, "\n"))
+			if debugBuiltin {
+				code2 := vm.AsmToBytes(strings.Join(asm, "\n"))
+				if !bytes.Equal(code, code2) {
+					fmt.Printf("%x\n", code)
+					fmt.Printf("%x\n", code2)
+					panic("not equal")
+				}
+			}
 			if op == "read" {
 				x, t := runViewRawCode(eaddr, code)
 				if t != "" {
