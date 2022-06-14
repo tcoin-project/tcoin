@@ -69,7 +69,7 @@ const void *entrypoint(uint32_t callId, void *callData) {
   return 0;
 }
 
-void init(void *callData) {
+void init() {
   storageMap<Address, uint64_t> balance_(1);
   balance_[msg::caller()] = TOTAL_SUPPLY;
 }

@@ -6,8 +6,8 @@ entrypoint_t regularStart() {
   return entrypoint;
 }
 
-start_t _start(void *initData) {
-  init(initData);
+start_t _start() {
+  init();
   return regularStart;
 }
 
@@ -32,7 +32,7 @@ void deserialize(char *&ptr, Address &x) {
 }
 
 uint64_t Address::balance() { return syscall::balance(this); }
-bool Address::transfer(uint64_t value, const char *msg) {
+void Address::transfer(uint64_t value, const char *msg) {
   return syscall::transfer(this, value, msg, strlen(msg));
 }
 

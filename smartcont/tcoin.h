@@ -7,17 +7,26 @@
 static constexpr size_t ADDR_LEN = 32;
 
 struct Address {
-  char s[ADDR_LEN];
-  Address() { memsetAligned(s, 0, ADDR_LEN); }
-  Address(const Address &x) { memcpyAligned(s, x.s, ADDR_LEN); }
+  union {
+    char s[ADDR_LEN];
+    uint64_t s8[ADDR_LEN / 8];
+  };
+  Address() {
+    for (size_t i = 0; i < ADDR_LEN / 8; i++)
+      s8[i] = 0;
+  }
+  Address(const Address &x) {
+    for (size_t i = 0; i < ADDR_LEN / 8; i++)
+      s8[i] = x.s8[i];
+  }
   Address(uint64_t x) {
-    *reinterpret_cast<uint64_t *>(s) = x;
-    for (size_t i = 8; i < ADDR_LEN; i++)
-      *reinterpret_cast<uint64_t *>(s + i) = 0;
+    s8[0] = x;
+    for (size_t i = 1; i < ADDR_LEN / 8; i++)
+      s8[i] = 0;
   }
   operator const char *() const { return s; }
   uint64_t balance();
-  bool transfer(uint64_t value, const char *msg);
+  void transfer(uint64_t value, const char *msg);
 };
 
 struct Contract {
@@ -42,8 +51,8 @@ extern "C" {
 typedef const void *(*entrypoint_t)(uint32_t callId, void *callData);
 typedef entrypoint_t (*start_t)();
 entrypoint_t regularStart();
-void init(void *initData) INIT_CODE;
-start_t _start(void *initData) INIT_CODE;
+void init() INIT_CODE;
+start_t _start() INIT_CODE;
 const void *entrypoint(uint32_t callId, void *callData);
 };
 
@@ -128,7 +137,7 @@ constexpr uint32_t fnv1a_32(const char *s, size_t count) {
   return ((count ? fnv1a_32(s, count - 1) : 2166136261u) ^ s[count]) *
          16777619u;
 }
-constexpr size_t strlen(const char *s) { return *s ? 0 : strlen(s + 1) + 1; }
+constexpr size_t strlen(const char *s) { return *s ? strlen(s + 1) + 1 : 0; }
 constexpr size_t findNamespace(const char *s) {
   return s[0] && s[1]
              ? (s[0] == ':' && s[1] == ':' ? 0 : findNamespace(s + 1) + 1)
@@ -138,7 +147,7 @@ constexpr size_t findNamespace(const char *s) {
 constexpr uint32_t selector(const char *s) {
   using namespace __selector;
   return findNamespace(s) >= 0 ? selector(s + findNamespace(s) + 2)
-                               : fnv1a_32(s, __selector::strlen(s));
+                               : fnv1a_32(s, __selector::strlen(s) - 1);
 }
 
 template <typename T> struct __receiveCall;

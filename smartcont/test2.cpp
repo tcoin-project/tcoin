@@ -31,4 +31,4 @@ const void *entrypoint(uint32_t callId, void *callData) {
   return 0;
 }
 
-void init(void *initData) {}
+void init() {}

@@ -164,7 +164,7 @@ func ExecuteTx(tx *Transaction, s *storage.Slice, ctx *ExecutionContext) error {
 	if senderAccount.Nonce != tx.Nonce {
 		return errors.New("nonce mismatch")
 	}
-	if tx.TxType == 1 && ctx.Tip1Enabled && tx.GasLimit < GasSyscallBase[SYSCALL_TRANSFER] {
+	if tx.TxType == 1 && ctx.Tip1Enabled && tx.GasLimit < GasSyscallBase[SYSCALL_TRANSFER]+uint64(len(tx.Data)) {
 		return vm.ErrInsufficientGas
 	}
 	senderAccount.Balance -= totalValue

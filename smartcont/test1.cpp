@@ -14,7 +14,7 @@ void withdraw(uint64_t value) {
   auto balance = balance_[msg::caller()];
   require(balance >= value, "balance too low");
   balance = balance - value;
-  msg::caller().transfer(value);
+  msg::caller().transfer(value, "");
 }
 
 uint64_t total() { return self().balance(); }
@@ -44,4 +44,4 @@ const void *entrypoint(uint32_t callId, void *callData) {
   return 0;
 }
 
-void init(void *initData) {}
+void init() {}
