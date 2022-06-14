@@ -174,7 +174,7 @@ func (cn *ChainNode) readLoop() {
 				if err != nil {
 					return err
 				}
-				return cn.handleBlockRequest(p, cp.PeerId, 10)
+				return cn.handleBlockRequest(p, cp.PeerId, 100)
 			} else if opcode == cnet.PktBlocks {
 				p, err := cnet.DecodeBlocks(buf)
 				if err != nil {
@@ -552,8 +552,15 @@ func (cn *ChainNode) syncLoop() {
 		cn.seMut.Unlock()
 		mh := hc[len(hc)-1].S.Height()
 		nh := cn.neighborHeight.Items()
-		remReq := 2
-		for k, v := range nh {
+		keys := make([]string, 0, len(nh))
+		for k := range nh {
+			keys = append(keys, k)
+		}
+		p := rand.Perm(len(keys))
+		remReq := 1
+		for ti := 0; ti < len(p); ti++ {
+			k := keys[p[ti]]
+			v := nh[k]
 			id := int(binary.LittleEndian.Uint64([]byte(k)))
 			h := v.Object.(int)
 			if h < mh-3 {
