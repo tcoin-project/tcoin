@@ -82,8 +82,10 @@ void mint() {
 }
 
 bool burn(uint64_t value) {
-  if (_transfer(msg::caller(), Address(0), value)) {
+  Address caller = msg::caller();
+  if (_transfer(caller, Address(0), value)) {
     adjustTotalSupply(-value);
+    caller.transfer(value, "");
     return true;
   }
   return false;
