@@ -237,38 +237,128 @@ func main() {
 			fmt.Printf("gas: %d\n", gas)
 			fmt.Printf("addr: %s\n", address.EncodeAddr(contractAddr))
 			sendTx(2, block.AddressType{}, 0, code2, uint64(gas))
-		case "get":
+		case "read", "write":
 			caddrt := cmd[0]
 			caddr, err := address.ParseAddr(caddrt)
 			if err != nil {
 				panic(err)
 			}
-			var asm []string
 			hs := fnv.New32a()
 			hs.Write([]byte(cmd[1]))
 			selector := int32(hs.Sum32())
-			switch cmd[1] {
-			case "totalSupply":
-				asm = []string{
-					fmt.Sprintf("li a0, %d", selector),
-					"li a1, 0",
-					"jalr s1",
-					"sd a0, -8(sp)",
-					"li a0, 8",
-					"sd a0, -16(sp)",
-					"addi a0, sp, -16",
-				}
-			default:
-				panic(fmt.Sprintf("%s not supported", cmd[1]))
+			funcs := map[string]string{
+				"name":         "c",
+				"symbol":       "c",
+				"decimals":     "i",
+				"totalSupply":  "i",
+				"balanceOf":    "ia",
+				"transfer":     "iai",
+				"transferFrom": "iaai",
+				"approve":      "iai",
+				"allowance":    "iaa",
 			}
-			asm = append([]string{
+			op2 := cmd[1]
+			if _, ok := funcs[op2]; !ok {
+				panic(fmt.Sprintf("%s not supported", op2))
+			}
+			cmdo := cmd
+			cmd = cmd[2:]
+			genWorker := func(argSpec string) []string {
+				s := []string{
+					"j later",
+					"calldata:",
+				}
+				at := argSpec[1:]
+				var a1s string
+				if len(at) == 0 {
+					a1s = "li a1, 0"
+				} else if len(at) == 1 && at[0] == 'i' {
+					x, err := strconv.Atoi(cmd[0])
+					if err != nil {
+						panic(err)
+					}
+					a1s = fmt.Sprintf("li a1, %d", x)
+				} else {
+					a1s = "la a1, calldata"
+					datas := []string{}
+					pos := 0x10000020 + 0x8*len(at)
+					for i := 0; i < len(at); i++ {
+						var k uint64
+						if at[i] == 'i' {
+							x, err := strconv.Atoi(cmd[i])
+							if err != nil {
+								panic(err)
+							}
+							k = uint64(x)
+						} else if at[i] == 'a' {
+							k = uint64(pos)
+							addr, err := address.ParseAddr(cmd[i])
+							if err != nil {
+								panic(err)
+							}
+							datas = append(datas, asAsmByteArr(addr[:]))
+							pos += len(addr)
+						}
+						buf := make([]byte, 8)
+						binary.LittleEndian.PutUint64(buf, k)
+						s = append(s, asAsmByteArr(buf))
+					}
+					if len(at) == 1 {
+						s = append(s[:len(s)-1], datas[0])
+					} else {
+						s = append(s, datas...)
+					}
+				}
+				s = append(s,
+					"later:",
+					fmt.Sprintf("li a0, %d", selector),
+					a1s,
+					"jalr s1",
+				)
+				if op == "write" {
+					return s
+				}
+				if argSpec[0] == 'i' {
+					s = append(s,
+						"sd a0, -8(sp)",
+						"li a0, 8",
+						"sd a0, -16(sp)",
+						"addi a0, sp, -16",
+					)
+				} else if argSpec[0] == 'c' {
+					s = append(s,
+						"addi a1, sp, -1024",
+						"mv a2, a1",
+						"loop:",
+						"lb a3, 0(a0)",
+						"beq a3, zero, final",
+						"sb a3, 0(a2)",
+						"addi a0, a0, 1",
+						"addi a2, a2, 1",
+						"j loop",
+						"final:",
+						"addi a0, a1, -8",
+						"sub a2, a2, a1",
+						"sd a2, 0(a0)",
+					)
+				}
+				return s
+			}
+			postProcess := func(r byte, data []byte) {
+				if r == 'i' {
+					fmt.Printf("%s: %d\n", strings.Join(cmdo[1:], " "), binary.LittleEndian.Uint64(data))
+				} else if r == 'c' {
+					fmt.Printf("%s: %s\n", strings.Join(cmdo[1:], " "), string(data))
+				}
+			}
+			asm := append([]string{
 				"mv s0, ra",
 				"la a0, caddr",
 				fmt.Sprintf("li t0, -%d", block.SYSCALL_LOAD_CONTRACT*8),
 				"srli t0, t0, 1",
 				"jalr t0",
 				"mv s1, a0",
-			}, asm...)
+			}, genWorker(funcs[op2])...)
 			asm = append(asm,
 				"mv ra, s0",
 				"ret",
@@ -276,14 +366,21 @@ func main() {
 				asAsmByteArr(caddr[:]),
 			)
 			code := vm.AsmToBytes(strings.Join(asm, "\n"))
-			x, t := runViewRawCode(eaddr, code)
-			if t != "" {
-				fmt.Printf("Error happened: %s\n", t)
-				return
-			}
-			switch cmd[1] {
-			case "totalSupply":
-				fmt.Printf("total supply: %d\n", binary.LittleEndian.Uint64(x))
+			if op == "read" {
+				x, t := runViewRawCode(eaddr, code)
+				if t != "" {
+					fmt.Printf("Error happened: %s\n", t)
+					return
+				}
+				postProcess(funcs[op2][0], x)
+			} else if op == "write" {
+				gas, t := estimateGas(eaddr, code)
+				if t != "" {
+					fmt.Printf("Error happened: %s\n", t)
+					return
+				}
+				fmt.Printf("gas: %d\n", gas)
+				sendTx(2, block.AddressType{}, 0, code, uint64(gas))
 			}
 		}
 	}
