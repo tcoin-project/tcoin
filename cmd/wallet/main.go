@@ -249,9 +249,6 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			hs := fnv.New32a()
-			hs.Write([]byte(cmd[1]))
-			selector := int32(hs.Sum32())
 			funcs := map[string]string{
 				"name":         "c",
 				"symbol":       "c",
@@ -263,12 +260,64 @@ func main() {
 				"approve":      "iai",
 				"allowance":    "iaa",
 			}
-			op2 := cmd[1]
-			if _, ok := funcs[op2]; !ok {
-				panic(fmt.Sprintf("%s not supported", op2))
-			}
 			cmdo := cmd
+			op2 := cmd[1]
 			cmd = cmd[2:]
+			if strings.Contains(op2, "(") && !strings.Contains(op2, ")") {
+				op2 = op2 + " " + cmd[0]
+				cmd = cmd[1:]
+			}
+			funcName := ""
+			funcSig := ""
+			callValue := uint64(0)
+		ofor:
+			for {
+				switch op2[len(op2)-1] {
+				case ']':
+					t := strings.Split(op2[:len(op2)-1], "[")
+					if len(t) != 2 {
+						panic("can't parse " + op2)
+					}
+					op2 = t[0]
+					funcSig = t[1]
+					continue
+				case ')':
+					t := strings.Split(op2[:len(op2)-1], "(")
+					if len(t) != 2 {
+						panic("can't parse " + op2)
+					}
+					op2 = t[0]
+					u := strings.ToLower(t[1])
+					if len(u) >= 6 && u[len(u)-6:] == " tcoin" {
+						f, err := strconv.ParseFloat(u[:len(u)-6], 64)
+						if err != nil {
+							panic(err)
+						}
+						callValue = uint64(math.Round(f * 1e9))
+					} else {
+						i, err := strconv.Atoi(u)
+						if err != nil {
+							panic(err)
+						}
+						callValue = uint64(i)
+					}
+					continue
+				default:
+					break ofor
+				}
+			}
+			funcName = op2
+			if funcSig == "" {
+				if t, ok := funcs[op2]; ok {
+					funcSig = t
+				} else {
+					panic(fmt.Sprintf("function signature of %s is unknown", op2))
+				}
+			}
+			hs := fnv.New32a()
+			hs.Write([]byte(funcName))
+			selector := int32(hs.Sum32())
+			fmt.Printf("%s %s %d\n", funcName, funcSig, callValue)
 			genWorker := func(argSpec string) []string {
 				s := []string{
 					"j later",
@@ -315,12 +364,28 @@ func main() {
 						s = append(s, datas...)
 					}
 				}
-				s = append(s,
-					"later:",
-					fmt.Sprintf("li a0, %d", selector),
-					a1s,
-					"jalr s1",
-				)
+				if callValue == 0 {
+					s = append(s,
+						"later:",
+						fmt.Sprintf("li a0, %d", selector),
+						a1s,
+						"jalr s1",
+					)
+				} else {
+					s = append(s,
+						"later:",
+						"mv a0, s1",
+						fmt.Sprintf("li a1, %d", selector),
+						strings.Replace(a1s, "a1", "a2", 1),
+						fmt.Sprintf("li a3, %d", callValue),
+						"li a4, 1000000000",
+						"addi a5, sp, -1200",
+						"addi a6, a5, 8",
+						fmt.Sprintf("li t0, -%d", block.SYSCALL_PROTECTED_CALL*8),
+						"srli t0, t0, 1",
+						"jalr t0",
+					)
+				}
 				if op == "write" {
 					return s
 				}
@@ -364,7 +429,7 @@ func main() {
 				"srli t0, t0, 1",
 				"jalr t0",
 				"mv s1, a0",
-			}, genWorker(funcs[op2])...)
+			}, genWorker(funcSig)...)
 			asm = append(asm,
 				"mv ra, s0",
 				"ret",
@@ -386,7 +451,7 @@ func main() {
 					fmt.Printf("Error happened: %s\n", t)
 					return
 				}
-				postProcess(funcs[op2][0], x)
+				postProcess(funcSig[0], x)
 			} else if op == "write" {
 				gas, t := estimateGas(eaddr, code)
 				if t != "" {

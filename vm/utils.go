@@ -202,7 +202,19 @@ func BuiltinAsmToBytes(asm string) []byte {
 					rest = append(rest, genIType(0b0011011, rd, 0b000, rd, int32(u)))
 				}
 			} else {
-				panic(fmt.Sprintf("li %d not implemented", v))
+				// different from toolchain
+				vlo := uint32(uint64(v))
+				vhi := uint32(uint64(v) >> 32)
+				if len(rest)%2 != 0 {
+					rest = append(rest, genIType(0b0010011, 0, 0b000, 0, 0))
+				}
+				rest = append(rest,
+					genUType(0b0010111, rd, 0),
+					genJType(0b1101111, 0, 12),
+					vlo,
+					vhi,
+					genIType(0b0000011, rd, 0b011, rd, 8),
+				)
 			}
 		case "srli":
 			rest = append(rest, genIType(0b0010011, reg(args[0]), 0b101, reg(args[1]), int32(word(args[2]))))
