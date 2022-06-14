@@ -446,7 +446,8 @@ func (cn *ChainNode) handleBlocks(p cnet.PacketBlocks) error {
 	cn.seMut.Lock()
 	s := storage.ForkSlice(cn.se.HighestSlice)
 	cn.seMut.Unlock()
-	rejectHeight := s.Height() - cn.config.StorageFinalizeDepth - 5
+	rejectLow := s.Height() - cn.config.StorageFinalizeDepth - 5
+	rejectHigh := s.Height() + 20
 	any := false
 	for i, bt := range p.Body {
 		var bh block.BlockHeader
@@ -464,12 +465,16 @@ func (cn *ChainNode) handleBlocks(p cnet.PacketBlocks) error {
 		} else {
 			bh = bt.(block.BlockHeader)
 		}
-		if p.MinId != -1 && p.MinId+i <= rejectHeight {
+		if p.MinId != -1 && p.MinId+i <= rejectLow {
 			cn.unresolvedBlocks.Delete(string(bh.Hash[:]))
 			if nHash, ok := cn.possibleNext.Get(string(bh.Hash[:])); ok {
 				nh := nHash.(block.HashType)
 				cn.unresolvedBlocks.Delete(string(nh[:]))
 			}
+			continue
+		}
+		if p.MinId != -1 && p.MinId+i >= rejectHigh {
+			cn.unresolvedBlocks.Delete(string(bh.Hash[:]))
 			continue
 		}
 		// log.Printf("get block %d %x", p.MinId+i, bh.Hash[:])
