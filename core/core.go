@@ -447,7 +447,7 @@ func (cn *ChainNode) handleBlocks(p cnet.PacketBlocks) error {
 	s := storage.ForkSlice(cn.se.HighestSlice)
 	cn.seMut.Unlock()
 	rejectLow := s.Height() - cn.config.StorageFinalizeDepth - 5
-	rejectHigh := s.Height() + 20
+	rejectHigh := s.Height() + 500
 	any := false
 	for i, bt := range p.Body {
 		var bh block.BlockHeader
