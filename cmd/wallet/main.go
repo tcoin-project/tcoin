@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -20,6 +19,8 @@ import (
 	"github.com/mcfx/tcoin/core/block"
 	"github.com/mcfx/tcoin/utils/address"
 	"github.com/mcfx/tcoin/vm"
+
+	"github.com/chzyer/readline"
 )
 
 var rpcUrl = "https://uarpc.mcfx.us/"
@@ -118,7 +119,6 @@ func main() {
 	copy(pubkey[:], tmps[32:])
 	addr := block.PubkeyToAddress(pubkey)
 	eaddr := address.EncodeAddr(addr)
-	rd := bufio.NewReader(os.Stdin)
 	fmt.Printf("Address: %s\n", eaddr)
 
 	sendTx := func(txType byte, toAddr block.AddressType, amount uint64, s []byte, gasLimit uint64) {
@@ -398,13 +398,27 @@ func main() {
 			}
 		}
 	}
+	l, err := readline.NewEx(&readline.Config{
+		Prompt:            "> ",
+		HistoryFile:       "~/.tcoinwallet_history",
+		InterruptPrompt:   "^C",
+		EOFPrompt:         "exit",
+		HistorySearchFold: true,
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
 	for {
-		fmt.Printf("> ")
-		line, err := rd.ReadString('\n')
+		line, err := l.Readline()
 		if err != nil {
-			panic(err)
+			break
 		}
-		cmd := strings.Split(line[:len(line)-1], " ")
+		line = strings.Trim(line, " ")
+		if line == "exit" {
+			break
+		}
+		cmd := strings.Split(line, " ")
 		process(cmd)
 	}
 }
