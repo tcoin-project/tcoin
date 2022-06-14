@@ -1,6 +1,7 @@
 package block
 
 import (
+	"encoding/binary"
 	"errors"
 
 	"github.com/mcfx/tcoin/storage"
@@ -16,6 +17,7 @@ const CallExternal = 1
 const CallStart = 2
 const CallRegular = 3
 const CallInit = 4
+const CallView = 5
 
 var ErrInvalidJumpDest = errors.New("invalid jump dest")
 
@@ -139,20 +141,21 @@ func (ctx *vmCtx) execVM(call *callCtx) (uint64, error) {
 	}
 }
 
-func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext, tx *Transaction) error {
+func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext, tx *Transaction) (uint64, error) {
 	const initPc = 0x10000000
 	if gasLimit < GasVmTxRawCode {
-		return vm.ErrInsufficientGas
+		return gasLimit, vm.ErrInsufficientGas
 	}
 	env := &vm.ExecEnv{
 		Gas: gasLimit - GasVmTxRawCode,
 	}
 	vmCtx := newVmCtx(ctx, origin, tx)
+	defer vmCtx.mem.Recycle()
 	id, _, _ := vmCtx.newProgram(origin)
 	err := vmCtx.mem.Programs[id].LoadRawCode(data, initPc, env)
 	vmCtx.entry[id] = 0
 	if err != nil {
-		return err
+		return env.Gas, err
 	}
 	vmCtx.cpus[id].Reg[2] = (uint64(id) << 32) | DefaultSp
 	_, err = vmCtx.execVM(&callCtx{
@@ -164,6 +167,48 @@ func ExecVmTxRawCode(origin AddressType, gasLimit uint64, data []byte, s *storag
 		caller:    id,
 		callType:  CallExternal,
 	})
-	vmCtx.mem.Recycle()
-	return err
+	return env.Gas, err
+}
+
+func ExecVmViewRawCode(origin AddressType, gasLimit uint64, data []byte, s *storage.Slice, ctx *ExecutionContext) ([]byte, error) {
+	const initPc = 0x10000000
+	env := &vm.ExecEnv{
+		Gas: gasLimit,
+	}
+	vmCtx := newVmCtx(ctx, origin, nil)
+	defer vmCtx.mem.Recycle()
+	id, _, _ := vmCtx.newProgram(origin)
+	err := vmCtx.mem.Programs[id].LoadRawCode(data, initPc, env)
+	vmCtx.entry[id] = 0
+	if err != nil {
+		return nil, err
+	}
+	vmCtx.cpus[id].Reg[2] = (uint64(id) << 32) | DefaultSp
+	ret, err := vmCtx.execVM(&callCtx{
+		s:         s,
+		env:       env,
+		pc:        initPc,
+		callValue: 0,
+		args:      nil,
+		caller:    id,
+		callType:  CallView,
+	})
+	if err != nil {
+		return nil, err
+	}
+	lenb := make([]byte, 8)
+	err = vmCtx.mem.ReadBytes(0, ret, lenb, env)
+	if err != nil {
+		return nil, err
+	}
+	n := binary.LittleEndian.Uint64(lenb)
+	if n > (1 << 20) {
+		return nil, err
+	}
+	if env.Gas < n {
+		return nil, vm.ErrInsufficientGas
+	}
+	res := make([]byte, n)
+	err = vmCtx.mem.ReadBytes(0, ret+8, res, env)
+	return res, err
 }

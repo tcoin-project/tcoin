@@ -180,7 +180,7 @@ func ExecuteTx(tx *Transaction, s *storage.Slice, ctx *ExecutionContext) error {
 		}
 	case 2:
 		newS := storage.ForkSlice(s)
-		err := ExecVmTxRawCode(senderAddr, tx.GasLimit, tx.Data, newS, ctx, tx)
+		_, err := ExecVmTxRawCode(senderAddr, tx.GasLimit, tx.Data, newS, ctx, tx)
 		if err == nil {
 			newS.Merge()
 		}

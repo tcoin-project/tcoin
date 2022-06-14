@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/mcfx/tcoin/core/block"
 	"github.com/mcfx/tcoin/utils/address"
+	"github.com/mcfx/tcoin/vm"
 )
 
 var rpcUrl = "https://uarpc.mcfx.us/"
@@ -36,6 +38,44 @@ func readWallet(addr string) block.AccountInfo {
 		panic(res.Msg)
 	}
 	return res.Data
+}
+
+func estimateGas(addr string, code []byte) (int, string) {
+	data, _ := json.Marshal(map[string]interface{}{"origin": addr, "code": code})
+	resp, err := http.Post(rpcUrl+"estimate_gas", "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		panic(err)
+	}
+	var res struct {
+		Status bool   `json:"status"`
+		Msg    string `json:"msg"`
+		Gas    int    `json:"gas"`
+		Error  string `json:"error"`
+	}
+	json.NewDecoder(resp.Body).Decode(&res)
+	if !res.Status {
+		panic(res.Msg)
+	}
+	return res.Gas, res.Error
+}
+
+func runViewRawCode(addr string, code []byte) ([]byte, string) {
+	data, _ := json.Marshal(map[string]interface{}{"origin": addr, "code": code})
+	resp, err := http.Post(rpcUrl+"run_view_raw_code", "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		panic(err)
+	}
+	var res struct {
+		Status bool   `json:"status"`
+		Msg    string `json:"msg"`
+		Data   []byte `json:"data"`
+		Error  string `json:"error"`
+	}
+	json.NewDecoder(resp.Body).Decode(&res)
+	if !res.Status {
+		panic(res.Msg)
+	}
+	return res.Data, res.Error
 }
 
 func main() {
@@ -61,13 +101,12 @@ func main() {
 	eaddr := address.EncodeAddr(addr)
 	rd := bufio.NewReader(os.Stdin)
 	fmt.Printf("Address: %s\n", eaddr)
-	for {
-		fmt.Printf("> ")
-		line, err := rd.ReadString('\n')
-		if err != nil {
-			panic(err)
-		}
-		cmd := strings.Split(line[:len(line)-1], " ")
+	process := func(cmd []string) {
+		defer func() {
+			if e := recover(); e != nil {
+				fmt.Printf("error: %v\n", e)
+			}
+		}()
 		op := cmd[0]
 		cmd = cmd[1:]
 		switch op {
@@ -117,6 +156,39 @@ func main() {
 			if !res["status"].(bool) {
 				panic(res["msg"].(string))
 			}
+		case "estimate_gas_asm":
+			b, err := ioutil.ReadFile(cmd[0])
+			if err != nil {
+				panic(err)
+			}
+			code := vm.AsmToBytes(string(b))
+			x, t := estimateGas(eaddr, code)
+			fmt.Printf("Gas used: %d\n", x)
+			if t != "" {
+				fmt.Printf("Error happened: %s\n", t)
+			}
+		case "run_view_asm":
+			b, err := ioutil.ReadFile(cmd[0])
+			if err != nil {
+				panic(err)
+			}
+			code := vm.AsmToBytes(string(b))
+			x, t := runViewRawCode(eaddr, code)
+			if x != nil {
+				fmt.Printf("result: %x\n", x)
+			}
+			if t != "" {
+				fmt.Printf("Error happened: %s\n", t)
+			}
 		}
+	}
+	for {
+		fmt.Printf("> ")
+		line, err := rd.ReadString('\n')
+		if err != nil {
+			panic(err)
+		}
+		cmd := strings.Split(line[:len(line)-1], " ")
+		process(cmd)
 	}
 }

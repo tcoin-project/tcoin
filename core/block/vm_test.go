@@ -54,7 +54,7 @@ func (t *testVmCtx) run() {
 		elf := vm.AsmToBytes(ct.code)
 		storeContractCode(t.s, ct.addr, elf)
 	}
-	err := ExecVmTxRawCode(t.origin, t.gasLimit, code, t.s, &ExecutionContext{
+	_, err := ExecVmTxRawCode(t.origin, t.gasLimit, code, t.s, &ExecutionContext{
 		Height:     200,
 		Time:       300,
 		Miner:      AddressType{2, 3, 4},
@@ -145,7 +145,7 @@ func (t *testVmCtx) runInner() {
 	vmCtx.mem.Recycle()
 }
 
-func TestVMBasicExec(t *testing.T) {
+func TestVMBasicExecTxRawCode(t *testing.T) {
 	(&testVmCtx{
 		t:             t,
 		asmCode:       "ret",
@@ -172,4 +172,32 @@ func TestVMBasicExec(t *testing.T) {
 		expectedGas:   vm.GasInstructionBase*12 + vm.GasMemoryPage*2 + GasCall*2,
 		expectedError: nil,
 	}).runInner()
+}
+
+func TestVMBasicExecViewRawCode(t *testing.T) {
+	code := strings.Join([]string{
+		"addi a0, sp, -160",
+		"li a1, 14",
+		"sd a1, 0(a0)",
+		"li a1, 0x3132333435363738",
+		"sd a1, 8(a0)",
+		"li a1, 0x4142434445464748",
+		"sd a1, 16(a0)",
+		"ret",
+	}, "\n")
+	s := storage.EmptySlice()
+	b, err := ExecVmViewRawCode(AddressType{1, 2, 3}, 1000000, vm.AsmToBytes(code), s, &ExecutionContext{
+		Height:     200,
+		Time:       300,
+		Miner:      AddressType{2, 3, 4},
+		Difficulty: HashType{0, 1},
+		ChainId:    345,
+		Callback:   nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "87654321HGFEDC" {
+		t.Fatalf("result mismatch: %s", string(b))
+	}
 }

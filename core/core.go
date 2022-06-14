@@ -601,10 +601,11 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 	txPool := cn.txPool.Items()
 	cn.seMut.Lock()
 	sl := storage.ForkSlice(cn.se.HighestSlice)
-	b := &block.Block{}
 	ls := cn.se.HighestChain[len(cn.se.HighestChain)-1]
-	b.Header.ParentHash = block.HashType(ls.Key)
 	cn.seMut.Unlock()
+	b := &block.Block{}
+	b.Header.ParentHash = block.HashType(ls.Key)
+	h := sl.Height()
 	cs, _ := cn.getConsensusState(ls.S.Height(), b.Header.ParentHash)
 	b.Miner = miner
 	b.Time = uint64(time.Now().UnixNano())
@@ -612,7 +613,6 @@ func (cn *ChainNode) GetBlockCandidate(miner block.AddressType) *block.Block {
 	for _, v := range txPool {
 		tx := v.Object.(*block.Transaction)
 		sl2 := storage.ForkSlice(sl)
-		h := cn.se.HighestSlice.Height() + 1
 		err := block.ExecuteTx(tx, sl2, &block.ExecutionContext{
 			Height:      h,
 			Time:        b.Time,
@@ -699,4 +699,55 @@ func (cn *ChainNode) GetBlock(height int) (*block.Block, *consensus.ConsensusSta
 		return nil, nil, err
 	}
 	return b, c, err
+}
+
+func (cn *ChainNode) GetStorageAt(addr block.AddressType, pos block.HashType) storage.DataType {
+	cn.seMut.Lock()
+	s := cn.se.HighestSlice
+	cn.seMut.Unlock()
+	key := storage.KeyType{}
+	key[0] = 2
+	copy(key[1:33], addr[:])
+	copy(key[33:], pos[:])
+	return s.Read(key)
+}
+
+func (cn *ChainNode) EstimateGas(origin block.AddressType, code []byte) (int, error) {
+	const gasLimit = 100000000
+	cn.seMut.Lock()
+	sl := storage.ForkSlice(cn.se.HighestSlice)
+	ls := cn.se.HighestChain[len(cn.se.HighestChain)-1]
+	cn.seMut.Unlock()
+	h := sl.Height()
+	cs, _ := cn.getConsensusState(ls.S.Height(), block.HashType(ls.Key))
+	rem, err := block.ExecVmTxRawCode(origin, gasLimit, code, sl, &block.ExecutionContext{
+		Height:      h,
+		Time:        uint64(time.Now().UnixNano()),
+		Miner:       block.AddressType{1},
+		Difficulty:  cs.Difficulty,
+		ChainId:     cn.gConfig.ChainId,
+		Callback:    cn.execCallback,
+		Tip1Enabled: h >= cn.gConfig.Tip1EnableHeight,
+	}, nil)
+	return int(gasLimit - rem), err
+}
+
+func (cn *ChainNode) RunViewRawCode(origin block.AddressType, code []byte) ([]byte, error) {
+	const gasLimit = 100000000
+	cn.seMut.Lock()
+	sl := storage.ForkSlice(cn.se.HighestSlice)
+	ls := cn.se.HighestChain[len(cn.se.HighestChain)-1]
+	cn.seMut.Unlock()
+	h := sl.Height()
+	cs, _ := cn.getConsensusState(ls.S.Height(), block.HashType(ls.Key))
+	b, err := block.ExecVmViewRawCode(origin, gasLimit, code, sl, &block.ExecutionContext{
+		Height:      h,
+		Time:        uint64(time.Now().UnixNano()),
+		Miner:       block.AddressType{1},
+		Difficulty:  cs.Difficulty,
+		ChainId:     cn.gConfig.ChainId,
+		Callback:    cn.execCallback,
+		Tip1Enabled: h >= cn.gConfig.Tip1EnableHeight,
+	})
+	return b, err
 }
