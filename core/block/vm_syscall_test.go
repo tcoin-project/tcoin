@@ -1140,7 +1140,7 @@ func TestVMSyscallLoadELF(t *testing.T) {
 		expectedGasWithBaseLen: vm.GasInstructionBase*(2-8) + vm.GasMemoryPage*2 + GasCall + GasSyscallBase[SYSCALL_LOAD_ELF] + GasLoadContractCode + uint64(len(elf)+31)/32*GasLoadContractCodePerBlock,
 		expectedError:          nil,
 		origin:                 AddressType{4, 5, 6},
-		callType:               CallInit,
+		callType:               CallStart,
 	}).runInner()
 	genCode2 := func(addr AddressType, x, y uint64) string {
 		return strings.Join([]string{
@@ -1201,6 +1201,6 @@ func TestVMSyscallLoadELF(t *testing.T) {
 		expectedGasWithBaseLen: vm.GasInstructionBase*(12*2-8) + vm.GasMemoryPage*3 + GasCall*3 + GasSyscallBase[SYSCALL_LOAD_CONTRACT] + GasSyscallBase[SYSCALL_LOAD_ELF] + GasSyscallBase[SYSCALL_JUMPDEST]*2 + GasLoadContractCodeCached + GasLoadContractCode + uint64(len(elf)+31)/32*GasLoadContractCodePerBlock,
 		expectedError:          nil,
 		origin:                 AddressType{1, 2, 3},
-		callType:               CallInit,
+		callType:               CallStart,
 	}).runInner()
 }

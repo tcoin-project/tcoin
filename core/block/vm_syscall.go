@@ -560,7 +560,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		}
 		cpu.SetArg(0, res)
 	case SYSCALL_LOAD_ELF:
-		if call.callType != CallInit {
+		if call.callType != CallStart {
 			return ErrIllegalSyscallParameters
 		}
 		a := AddressType{}
