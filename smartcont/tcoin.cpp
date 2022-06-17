@@ -1,7 +1,8 @@
 #include "tcoin.h"
 #include "stdlib.h"
 
-entrypoint_t regularStart() {
+entrypoint_t regularStart(const void *data) {
+  regularInit(data);
   syscall::markJumpDest(reinterpret_cast<void *>(entrypoint));
   return entrypoint;
 }
@@ -32,7 +33,7 @@ void deserialize(char *&ptr, Address &x) {
 }
 
 uint64_t Address::balance() { return syscall::balance(this); }
-void Address::transfer(uint64_t value, const char *msg) {
+void Address::transfer(uint64_t value, const char *msg) const {
   return syscall::transfer(this, value, msg, strlen(msg));
 }
 

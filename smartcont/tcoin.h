@@ -24,9 +24,20 @@ struct Address {
     for (size_t i = 1; i < ADDR_LEN / 8; i++)
       s8[i] = 0;
   }
+  Address(uint64_t x, uint64_t y, uint64_t z, uint64_t w) {
+    s8[0] = x;
+    s8[1] = y;
+    s8[2] = z;
+    s8[3] = w;
+  }
+  Address &operator=(const Address &x) {
+    for (size_t i = 0; i < ADDR_LEN / 8; i++)
+      s8[i] = x.s8[i];
+    return *this;
+  }
   operator const char *() const { return s; }
   uint64_t balance();
-  void transfer(uint64_t value, const char *msg);
+  void transfer(uint64_t value, const char *msg) const;
 };
 
 struct Contract {
@@ -49,11 +60,14 @@ constexpr size_t serializeLen(const Address &x) { return ADDR_LEN; }
 
 extern "C" {
 typedef const void *(*entrypoint_t)(uint32_t callId, void *callData);
-typedef entrypoint_t (*start_t)();
-entrypoint_t regularStart();
+typedef entrypoint_t (*start_t)(const void *);
+#ifndef NOSTART
+entrypoint_t regularStart(const void *data);
+void regularInit(const void *data);
 void init() INIT_CODE;
 start_t _start() INIT_CODE;
 const void *entrypoint(uint32_t callId, void *callData);
+#endif
 };
 
 namespace syscall {
@@ -120,6 +134,7 @@ const auto gasleft =
     reinterpret_cast<uint64_t (*)()>(syscall::addr(SYSCALL_GAS));
 
 void require(bool cond, const char *revertMsg);
+#define assert(cond) require(cond, "assertion failed: " #cond)
 
 #ifndef NO_MALLOC
 #include <new>
@@ -131,6 +146,29 @@ template <typename T> const T *asSharedPtr(const T &x) {
   return ptr;
 }
 #endif
+
+template <typename T> struct storageVar {
+  Address mapId;
+  storageVar(Address mapId) : mapId(mapId) {}
+  storageVar(uint64_t id) : mapId(id) {}
+  operator T() {
+    static_assert(serializeLen(T()) <= ADDR_LEN,
+                  "var length can't be larger than maximum");
+    char tmp[ADDR_LEN], *ptr = tmp;
+    T res;
+    storage::load(mapId, tmp);
+    deserialize(ptr, res);
+    return res;
+  }
+  const T &operator=(const T &x) {
+    static_assert(serializeLen(T()) <= ADDR_LEN,
+                  "var length can't be larger than maximum");
+    char tmp[ADDR_LEN], *ptr = tmp;
+    serialize(ptr, x);
+    storage::store(mapId, tmp);
+    return x;
+  }
+};
 
 namespace __selector {
 constexpr uint32_t fnv1a_32(const char *s, size_t count) {
@@ -148,6 +186,9 @@ constexpr uint32_t selector(const char *s) {
   using namespace __selector;
   return findNamespace(s) >= 0 ? selector(s + findNamespace(s) + 2)
                                : fnv1a_32(s, __selector::strlen(s) - 1);
+}
+constexpr uint64_t selector64(const char *s) {
+  return uint64_t(int64_t(int32_t(selector(s))));
 }
 
 template <typename T> struct __receiveCall;
@@ -205,6 +246,17 @@ template <typename callType> struct __receiveCast<void(callType, void *)> {
 template <typename T> struct __resCast {
   static T cast(void *x) { return reinterpret_cast<T>(x); }
 };
+#define implicitResCast(T)                                                     \
+  template <> struct __resCast<T> {                                            \
+    static T cast(void *x) { return (T) reinterpret_cast<uint64_t>(x); }       \
+  };
+implicitResCast(uint8_t);
+implicitResCast(int8_t);
+implicitResCast(uint16_t);
+implicitResCast(int16_t);
+implicitResCast(uint32_t);
+implicitResCast(int32_t);
+implicitResCast(bool);
 template <> struct __resCast<void> {
   static void cast(void *x) {}
 };
@@ -274,12 +326,12 @@ struct __makeCall<resType (contractType::*)(argType...)> {
 
 #define impl0(func)                                                            \
   __makeCall<__typeof(&func)>::resType_ func() {                               \
-    return __makeCall<__typeof(&func)>::call(this, selector(#func));           \
+    return __makeCall<__typeof(&func)>::call(this, selector64(#func));         \
   }
 #define impl1(func)                                                            \
   __makeCall<__typeof(&func)>::resType_ func(                                  \
       __makeCall<__typeof(&func)>::argType_ a1) {                              \
-    return __makeCall<__typeof(&func)>::call(this, selector(#func), a1);       \
+    return __makeCall<__typeof(&func)>::call(this, selector64(#func), a1);     \
   }
 // https://www.scs.stanford.edu/~dm/blog/va-opt.html
 #define __parens ()
@@ -302,7 +354,7 @@ struct __makeCall<resType (contractType::*)(argType...)> {
   __makeCall<__typeof(&func)>::resType_ func(                                  \
       __implMulti_forEach(__implMulti_arg, func, 0, __seq##n)) {               \
     return __makeCall<__typeof(&func)>::call(                                  \
-        this, selector(#func),                                                 \
+        this, selector64(#func),                                               \
         __implMulti_forEach(__implMulti_call, func, 0, __seq##n));             \
   }
 #define __seq2 1

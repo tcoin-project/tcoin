@@ -349,7 +349,14 @@ func main() {
 							k = uint64(pos)
 							addr, err := address.ParseAddr(cmd[i])
 							if err != nil {
-								panic(err)
+								t, err2 := hex.DecodeString(cmd[i])
+								if err2 != nil {
+									panic(err)
+								}
+								if len(t) != block.AddressLen {
+									panic("hex address length invalid")
+								}
+								copy(addr[:], t)
 							}
 							datas = append(datas, asAsmByteArr(addr[:]))
 							pos += len(addr)
@@ -384,6 +391,13 @@ func main() {
 						fmt.Sprintf("li t0, -%d", block.SYSCALL_PROTECTED_CALL*8),
 						"srli t0, t0, 1",
 						"jalr t0",
+						"lb t1, 0(a5)",
+						"bne t1, zero, success",
+						"mv a0, a6",
+						fmt.Sprintf("li t0, -%d", block.SYSCALL_REVERT*8),
+						"srli t0, t0, 1",
+						"jalr t0",
+						"success:",
 					)
 				}
 				if op == "write" {
@@ -412,6 +426,20 @@ func main() {
 						"sub a2, a2, a1",
 						"sd a2, 0(a0)",
 					)
+				} else if argSpec[0] == 'a' {
+					s = append(s,
+						"ld t0, 0(a0)",
+						"sd t0, -32(sp)",
+						"ld t0, 8(a0)",
+						"sd t0, -24(sp)",
+						"ld t0, 16(a0)",
+						"sd t0, -16(sp)",
+						"ld t0, 24(a0)",
+						"sd t0, -8(sp)",
+						"addi a0, sp, -40",
+						"li t0, 32",
+						"sd t0, 0(a0)",
+					)
 				}
 				return s
 			}
@@ -420,6 +448,10 @@ func main() {
 					fmt.Printf("%s: %d\n", strings.Join(cmdo[1:], " "), binary.LittleEndian.Uint64(data))
 				} else if r == 'c' {
 					fmt.Printf("%s: %s\n", strings.Join(cmdo[1:], " "), string(data))
+				} else if r == 'a' {
+					var addr block.AddressType
+					copy(addr[:], data)
+					fmt.Printf("%s: %s\n", strings.Join(cmdo[1:], " "), address.EncodeAddr(addr))
 				}
 			}
 			asm := append([]string{
@@ -445,6 +477,7 @@ func main() {
 					panic("not equal")
 				}
 			}
+			fmt.Printf("%x\n", code)
 			if op == "read" {
 				x, t := runViewRawCode(eaddr, code)
 				if t != "" {
@@ -460,6 +493,14 @@ func main() {
 				}
 				fmt.Printf("gas: %d\n", gas)
 				sendTx(2, block.AddressType{}, 0, code, uint64(gas))
+			}
+		case "parse":
+			addr, err := address.ParseAddr(cmd[0])
+			if err != nil {
+				panic(err)
+			}
+			for i := 0; i < 4; i++ {
+				fmt.Printf("%d\n", binary.LittleEndian.Uint64(addr[i*8:i*8+8]))
 			}
 		}
 	}

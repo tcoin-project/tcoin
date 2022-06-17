@@ -4,16 +4,10 @@
 #include "tcoin.h"
 
 void request() {
-  Address key(3), val;
-  storage::load(key, val.s);
-  char *t = val.s;
-  uint64_t last;
-  deserialize(t, last);
+  storageVar<uint64_t> last(3);
   uint64_t cur = block::time();
   require(cur - last >= 600'000'000'000ull, "please wait for 10min");
-  t = val.s;
-  serialize(t, cur);
-  storage::store(key, val);
+  last = cur;
   msg::caller().transfer(1'000'000'000ull, "");
 }
 

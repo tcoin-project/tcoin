@@ -234,6 +234,9 @@ func BuiltinAsmToBytes(asm string) []byte {
 		case "beq":
 			later[len(rest)] = lin
 			rest = append(rest, 0)
+		case "bne":
+			later[len(rest)] = lin
+			rest = append(rest, 0)
 		case "ret":
 			rest = append(rest, genIType(0b1100111, 0, 0b000, 1, 0))
 		case "addi":
@@ -243,6 +246,9 @@ func BuiltinAsmToBytes(asm string) []byte {
 		case "lb":
 			offset, rs1 := parseMem(args[1])
 			rest = append(rest, genIType(0b0000011, reg(args[0]), 0b000, rs1, offset))
+		case "ld":
+			offset, rs1 := parseMem(args[1])
+			rest = append(rest, genIType(0b0000011, reg(args[0]), 0b011, rs1, offset))
 		case "sb":
 			offset, rs1 := parseMem(args[1])
 			rest = append(rest, genSType(0b0100011, 0b000, rs1, reg(args[0]), offset))
@@ -269,6 +275,9 @@ func BuiltinAsmToBytes(asm string) []byte {
 		case "beq":
 			diff := (labels[args[2]] - p) * 4
 			rest[p] = genBType(0b1100011, 0b000, reg(args[0]), reg(args[1]), int32(diff))
+		case "bne":
+			diff := (labels[args[2]] - p) * 4
+			rest[p] = genBType(0b1100011, 0b001, reg(args[0]), reg(args[1]), int32(diff))
 		default:
 			panic(fmt.Sprintf("%s not implemented in phase 2", lin.op))
 		}
