@@ -576,7 +576,7 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		if err != nil {
 			return err
 		}
-		cpu.SetArg(0, uint64(entry))
+		cpu.SetArg(0, prog<<32|uint64(entry))
 	}
 	return nil
 }
