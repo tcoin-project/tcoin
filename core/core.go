@@ -736,6 +736,13 @@ func (cn *ChainNode) GetStorageAt(addr block.AddressType, pos block.HashType) st
 	return s.Read(key)
 }
 
+func (cn *ChainNode) GetContractElf(addr block.AddressType) ([]byte, error) {
+	cn.seMut.Lock()
+	s := cn.se.HighestSlice
+	cn.seMut.Unlock()
+	return block.LoadContractCode(s, addr)
+}
+
 func (cn *ChainNode) EstimateGas(origin block.AddressType, code []byte) (int, error) {
 	const gasLimit = 100000000
 	cn.seMut.Lock()

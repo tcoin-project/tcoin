@@ -85,6 +85,19 @@ const GasLoadContractCodeCached = 400
 const GasLoadContractCode = 20000
 const GasLoadContractCodePerBlock = 2000
 
+func LoadContractCode(s *storage.Slice, addr AddressType) ([]byte, error) {
+	ctx := &vmCtx{
+		elfCache: make(map[AddressType][]byte),
+	}
+	call := &callCtx{
+		env: &vm.ExecEnv{
+			Gas: 1000000000,
+		},
+		s: s,
+	}
+	return ctx.loadContractCode(call, addr)
+}
+
 func (ctx *vmCtx) loadContractCode(call *callCtx, addr AddressType) ([]byte, error) {
 	env := call.env
 	if s, ok := ctx.elfCache[addr]; ok {

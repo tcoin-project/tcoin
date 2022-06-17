@@ -31,6 +31,7 @@ func NewServer(c *core.ChainNode) *Server {
 	s.r.POST("/submit_tx", s.submitTx)
 	s.r.GET("/get_block/:blockid", s.getBlock)
 	s.r.GET("/get_storage_at/:addr/:pos", s.getStorageAt)
+	s.r.GET("/get_contract_elf/:addr", s.getContractElf)
 	s.r.POST("/estimate_gas", s.estimateGas)
 	s.r.POST("/run_view_raw_code", s.runViewRawCode)
 	s.r.GET("/explorer/get_account_transactions/:addr/:page", s.explorerGetAccountTransactions)
@@ -188,6 +189,21 @@ func (s *Server) getStorageAt(c *gin.Context) {
 	copy(posc[:], pos)
 	res := s.c.GetStorageAt(addr, posc)
 	c.JSON(200, gin.H{"status": true, "data": hex.EncodeToString(res[:])})
+}
+
+func (s *Server) getContractElf(c *gin.Context) {
+	raddr := c.Param("addr")
+	addr, err := address.ParseAddr(raddr)
+	if err != nil {
+		c.JSON(200, gin.H{"status": false, "msg": err.Error()})
+		return
+	}
+	res, err := s.c.GetContractElf(addr)
+	var es interface{} = nil
+	if err != nil {
+		es = err.Error()
+	}
+	c.JSON(200, gin.H{"status": true, "elf": res, "error": es})
 }
 
 func (s *Server) estimateGas(c *gin.Context) {
