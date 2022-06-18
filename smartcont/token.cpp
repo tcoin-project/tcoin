@@ -5,9 +5,9 @@
 
 const uint64_t TOTAL_SUPPLY = 1'000'000'000'000'000'000ull;
 
-const char *name() { return "Example Token"; }
+const char *name() { return "ABC Coin"; }
 
-const char *symbol() { return "ET"; }
+const char *symbol() { return "ABC"; }
 
 uint8_t decimals() { return 9; }
 
@@ -45,9 +45,7 @@ bool transferFrom(const Address *from, const Address *to, uint64_t value) {
 bool approve(const Address *spender, uint64_t value) {
   storageMap<Address, storageMap<Address, uint64_t>> allowance_(2);
   auto allowance = allowance_[msg::caller()][*spender];
-  if (!checkAdd(allowance, value))
-    return false;
-  allowance = allowance + value;
+  allowance = value;
   return true;
 }
 
@@ -68,6 +66,8 @@ const void *entrypoint(uint32_t callId, void *callData) {
   export(allowance);
   return 0;
 }
+
+void regularInit(const void *data) {}
 
 void init() {
   storageMap<Address, uint64_t> balance_(1);
