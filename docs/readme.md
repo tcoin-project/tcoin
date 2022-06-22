@@ -1,11 +1,17 @@
 # TCoin Docs
 
-## Fullnode Setup
+## Specs
 
-You need to download the [global_config.json](global_config.json), and create a `config.json` (you may refer to [sample_config.json](sample_config.json)).
+[Account Model Specification](account.md)
 
-Then, go to `/cmd/fullnode`, and run the following command to start syncing.
+[VM Specification](vm.md)
 
-```shell
-go run main.go -config /path/to/config.json -globalConfig /path/to/global_config.json
-```
+## Commands
+
+[Fullnode Setup](fullnode.md)
+
+[Wallet Help](wallet.md)
+
+## Smart Contract Development
+
+[Smart Contract](../smartcont/)
