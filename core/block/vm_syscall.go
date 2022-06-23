@@ -374,6 +374,9 @@ func (ctx *vmCtx) execSyscall(call *callCtx, syscallId uint64) error {
 		if callProg >= vm.MaxLoadedPrograms {
 			return ErrIllegalSyscallParameters
 		}
+		if !ctx.isValidJumpDest(callPc) {
+			return ErrInvalidJumpDest
+		}
 		if callValue != 0 {
 			if env.Gas < GasSyscallBase[SYSCALL_TRANSFER] {
 				return vm.ErrInsufficientGas
